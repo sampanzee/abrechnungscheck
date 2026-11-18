@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Abrechnungscheck</title>
+<meta name="description" content="Prüft die DIAKOVERE-Gehaltsabrechnung gegen Vivendi und den TV DN. Alle Daten bleiben auf dem Gerät.">
+<meta name="theme-color" content="#1d5b85">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topbar">
+      <span class="eyebrow">Diakovere · TV DN</span>
+      <div class="btns">
+        <button type="button" class="sec small" id="openWizard">Einrichtung</button>
+        <button type="button" class="sec small" id="openBackup">Sicherung</button>
+      </div>
+    </div>
+    <h1>Abrechnungscheck</h1>
+    <div class="period" id="period"></div>
+    <div class="monthnav" id="monthnav">
+      <button type="button" class="sec small" id="prevM" aria-label="Vorheriger Monat">‹</button>
+      <select id="monthSel" aria-label="Monat wählen"></select>
+      <button type="button" class="sec small" id="nextM" aria-label="Nächster Monat">›</button>
+    </div>
+  </header>
+
+  <section class="empty" id="welcome" hidden>
+    <h2>Willkommen</h2>
+    <p class="hint">Der Abrechnungscheck rechnet deine Zulagen aus der Vivendi-Monatsauswertung nach und vergleicht sie mit deiner Gehaltsmitteilung. Alles läuft nur auf diesem Gerät, nichts wird hochgeladen.</p>
+    <ol class="hint" style="margin:0;padding-left:20px">
+      <li>Einmal die <b>Einrichtung</b> durchgehen (Gruppe, Stufe, Kinder, Steuer).</li>
+      <li>Das <b>Vivendi-PDF</b> eines Monats laden.</li>
+      <li>Die <b>Gehaltsmitteilung</b> zwei Monate später fotografieren.</li>
+    </ol>
+    <div class="btns">
+      <button type="button" id="welcomeWizard">Einrichtung starten</button>
+      <button type="button" class="sec" id="welcomeImport">Sicherung importieren</button>
+    </div>
+  </section>
+
+  <div id="main">
+    <section class="summary" id="summary" aria-live="polite"></section>
+    <section class="brutto" id="brutto"></section>
+    <section class="notes" id="warnings"></section>
+    <section class="list" id="result"></section>
+  </div>
+
+  <details class="card" id="sec-viv">
+    <summary><h2>1 · Vivendi-Monatsauswertung</h2><span class="muted" id="vivShort"></span></summary>
+    <div class="body">
+      <p class="hint">Lade das PDF der Einzelabrechnung des Arbeitsmonats. Die Zulagen dazu stehen in der Gehaltsmitteilung zwei Monate später. Jeder geladene Monat wird gespeichert.</p>
+      <div class="btns">
+        <input type="file" id="pdf" class="vh" accept="application/pdf,.pdf" tabindex="-1" aria-hidden="true">
+        <button type="button" id="pdfBtn">PDF auswählen</button>
+      </div>
+      <div class="status" id="vivStatus" hidden></div>
+      <details>
+        <summary class="muted" style="cursor:pointer;font-size:.85rem">Text stattdessen einfügen</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <textarea id="vivText" spellcheck="false" placeholder="Text aus dem Vivendi-PDF hier einfügen"></textarea>
+          <div class="btns"><button type="button" id="useText">Text auswerten</button></div>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details class="card" id="sec-abr">
+    <summary><h2>2 · Gehaltsmitteilung</h2><span class="muted" id="abrShort"></span></summary>
+    <div class="body">
+      <div class="btns">
+        <input type="file" id="photo" class="vh" accept="image/*" tabindex="-1" aria-hidden="true">
+        <button type="button" id="photoBtn">Gehaltsmitteilung fotografieren</button>
+        <button type="button" class="sec" id="clearAbr">Alle Felder leeren</button>
+      </div>
+      <div class="status" id="ocrStatus" hidden></div>
+      <div id="ocrResult" hidden></div>
+      <p class="hint">Oder von Hand eintragen: Posten aus der Spalte „Vormonate“ (Stunden bzw. Tage und Betrag), Entgelt und Kinderzulage aus „lfd. Monat“. Leere Felder werden nicht geprüft. Die beiden Zeilen „ZZ während BD“ gehören zu Na&nbsp;1 und Na&nbsp;2. „JNN Oster/Pfingst“ und „JNN 1. Mai/Weihn“ zählen zum Feiertag, alle „FZZ Stufe“-Zeilen zusammen zu „Feiertag im BD“.</p>
+      <label class="check" for="planSpaet"><input type="checkbox" id="planSpaet"> Dienstplan für diesen Monat zu spät veröffentlicht (weniger als 6 Wochen vorher)</label>
+      <label class="check" for="bzMonth"><input type="checkbox" id="bzMonth"> Nur Dienste zählen, Abrechnung nicht prüfen (z.&nbsp;B. Monate vor Juni 2026 mit 4-Wochen-Berechnungszeiträumen)</label>
+      <div class="abr" id="abrForm"></div>
+      <div class="abr">
+        <span class="n">SV-pflichtige ZV-Umlage lfd. Monat<small>NNL SV-PflichtZV, Spalte „lfd. Monat“</small></span><span></span>
+        <input class="num" inputmode="decimal" id="nnlL" aria-label="SV-pflichtige ZV-Umlage laufender Monat">
+        <span class="n">SV-pflichtige ZV-Umlage Vormonate<small>NNL SV-PflichtZV, Spalte „Vormonate“</small></span><span></span>
+        <input class="num" inputmode="decimal" id="nnlV" aria-label="SV-pflichtige ZV-Umlage Vormonate">
+        <span class="n">Auszahlungsbetrag lfd. Monat<small>rechte Seite, „lfd. Monat“</small></span><span></span>
+        <input class="num" inputmode="decimal" id="netLfd" aria-label="Auszahlungsbetrag laufender Monat">
+        <span class="n">Auszahlungsbetrag Vormonate<small>rechte Seite, „Vormonate“</small></span><span></span>
+        <input class="num" inputmode="decimal" id="netVor" aria-label="Auszahlungsbetrag Vormonate">
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="sec-own">
+    <summary><h2>Dienste und Freizeitausgleich</h2><span class="muted" id="ownShort"></span></summary>
+    <div class="body" id="ownBody"></div>
+  </details>
+
+  <details class="card" id="sec-hist">
+    <summary><h2>Gespeicherte Monate</h2><span class="muted" id="histShort"></span></summary>
+    <div class="body">
+      <div class="stats" id="stats"></div>
+      <div class="hist" id="hist"></div>
+    </div>
+  </details>
+
+  <details class="card" id="sec-codes">
+    <summary><h2>Dienstkürzel</h2><span class="muted" id="codesShort"></span></summary>
+    <div class="body">
+      <p class="hint">Alle Kürzel aus der Ist-Spalte deiner gespeicherten Monate. „Automatisch“ erkennt den Dienst an den Zeilen in Vivendi. Eine eigene Regel brauchst du nur, wenn das nicht reicht.</p>
+      <div class="tbl" id="codesTbl"></div>
+    </div>
+  </details>
+
+  <details class="card" id="sec-set">
+    <summary><h2>Einstellungen</h2><span class="muted" id="setShort"></span></summary>
+    <div class="body" id="setBody"></div>
+  </details>
+
+  <details class="card" id="sec-tarif">
+    <summary><h2>Tarifwerte</h2><span class="muted" id="tarifShort"></span></summary>
+    <div class="body" id="tarifBody"></div>
+  </details>
+
+  <footer>Grün: nachgerechnet und stimmt. Rot: weicht ab. Grau: noch nicht prüfbar. Alle Daten bleiben auf diesem Gerät. Ohne Gewähr, die Prüfung ersetzt keine Beratung. <span id="ver"></span></footer>
+</div>
+
+<dialog id="wizard" aria-labelledby="wzTitle"><div class="dlg" id="wzBody"></div></dialog>
+
+<dialog id="backupDlg" aria-labelledby="bkTitle">
+  <div class="dlg">
+    <h2 id="bkTitle">Sicherung</h2>
+    <p class="hint">Deine Daten liegen nur in diesem Browser. Speichere ab und zu eine Sicherung, z.&nbsp;B. vor einem Handywechsel. Beim Importieren werden vorhandene Monate ergänzt, nicht gelöscht.</p>
+    <div class="btns">
+      <button type="button" id="exportBtn">Sicherungsdatei speichern</button>
+      <input type="file" id="importFile" class="vh" accept="application/json,.json" tabindex="-1" aria-hidden="true">
+      <button type="button" class="sec" id="importBtn">Sicherungsdatei importieren</button>
+    </div>
+    <div class="status" id="backupStatus" hidden></div>
+    <details>
+      <summary class="muted" style="cursor:pointer;font-size:.85rem">Als Text kopieren oder einfügen</summary>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+        <textarea id="backup" spellcheck="false"></textarea>
+        <div class="btns"><button type="button" class="sec" id="copyBackup">Als Text kopieren</button><button type="button" class="sec" id="pasteImport">Eingefügten Text importieren</button></div>
+      </div>
+    </details>
+    <details>
+      <summary class="muted" style="cursor:pointer;font-size:.85rem;color:var(--bad)">Alle Daten auf diesem Gerät löschen</summary>
+      <div class="btns" style="margin-top:8px"><button type="button" class="danger" id="wipeBtn">Alles löschen</button></div>
+    </details>
+    <div class="nav"><span></span><button type="button" class="sec" id="closeBackup">Schließen</button></div>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="lohnsteuer.js"></script>
+<script src="netto.js"></script>
+<script src="logic.js"></script>
+<script src="abrocr.js"></script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
