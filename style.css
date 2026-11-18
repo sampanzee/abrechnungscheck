@@ -143,3 +143,8 @@ table.edit td { padding: 3px 4px; }
 .inline label.f { flex: 1 1 140px; }
 
 [hidden]{display:none!important}
+.ocrlist { align-items: center; }
+.ocrlist input.num { width: 7.5em; padding: 6px 8px; }
+.ocrlist .unsure { color: var(--bad); }
+.ocrlist input.unsure { border-color: var(--bad); color: var(--ink); }
+.ocrlist > span { min-width: 0; overflow-wrap: anywhere; }

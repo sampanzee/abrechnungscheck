@@ -1,6 +1,6 @@
 // Abrechnungscheck – Oberfläche, Speicher, Einrichtung, Netto, Tarif-Editor, Fotoerkennung
 "use strict";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 const KEY = "abrcheck.app.v1";
 
 const DEF_SET = {
@@ -139,8 +139,8 @@ const SET_FIELDS = {
   pkvBeitrag: { l: "PKV-Beitrag €/Monat (Kranken + Pflege)", t: "num", help: "Nur bei privater Krankenversicherung." },
   pkvZuschuss: { l: "Arbeitgeberzuschuss PKV €/Monat", t: "num", help: "Nur bei privater Krankenversicherung." },
   versorgungswerk: { l: "Rentenversicherung", t: "select", opts: () => [["1", "Ärzteversorgung (Versorgungswerk)"], ["0", "Deutsche Rentenversicherung"]], help: "Versorgungswerk, wenn „Gesamtbeitrag BVE“ und „Zuschuss BVE“ auf der Gehaltsmitteilung stehen." },
-  bveSatz: { l: "Beitragssatz Versorgungswerk % (gesamt)", t: "num", help: "Meist 18,6 %. Die Hälfte zahlt der Arbeitgeber als „Zuschuss BVE“." },
-  zvSatz: { l: "Eigenbeitrag Zusatzversorgung (ZVK) %", t: "num", help: "„AN-Beitrag ZV“ ÷ Entgelt, 2026 meist 1,3 %." },
+  bveSatz: { l: "Beitragssatz Versorgungswerk % (gesamt)", t: "num", help: "Meist 18,6 %. Rechnung: „Gesamtbeitrag BVE“ (Seite 1, Spalte „lfd. Monat“) ÷ „RV-Brutto“ (Seite 2 unter „Summen“, Spalte „Monat“) × 100. Die Hälfte zahlt der Arbeitgeber als „Zuschuss BVE“." },
+  zvSatz: { l: "Eigenbeitrag Zusatzversorgung (ZVK) %", t: "num", help: "Meist 1,3 %. Rechnung: „AN-Beitrag ZV“ (Seite 1, Spalte „lfd. Monat“) ÷ „ZV-Brutto“ (Seite 2 unter „Summen“, Spalte „Monat“) × 100." },
   entgeltumwandlung: { l: "Entgeltumwandlung €/Monat", t: "num", help: "z. B. „UnterstützKasse“ auf der rechten Seite." },
   vwlSparrate: { l: "VL-Sparrate €/Monat", t: "num", help: "„Vw-Leistung“ auf der rechten Seite." },
   agZuschussFrei: { l: "Steuerfreier Arbeitgeberzuschuss €/Monat", t: "num", help: "z. B. „NNN Zuschuss Betr.“ in der Spalte „lfd. Monat“." }
@@ -423,6 +423,7 @@ $("useText").addEventListener("click", () => loadViv($("vivText").value));
 // ---------- Gehaltsmitteilung per Foto ----------
 const OCR_LABEL = Object.assign(Object.fromEntries(POSTEN.map(p => [p.key, p.label])), { netLfd: "Auszahlung lfd. Monat", netVor: "Auszahlung Vormonate", nnlL: "SV-pflichtige ZV-Umlage lfd.", nnlV: "SV-pflichtige ZV-Umlage Vormonate", summeLfd: "Summe lfd. Monat" });
 let ocrPending = null;
+const OCR_ORDER = ["grund", "kinder", "sz", "zg", "uezz", "so", "ft", "nacht", "x2412", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank", "nnlL", "nnlV", "netLfd", "netVor"];
 $("photoBtn").addEventListener("click", () => $("photo").click());
 $("photo").addEventListener("change", async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
@@ -430,12 +431,24 @@ $("photo").addEventListener("change", async e => {
   try {
     const r = await PayslipOCR.readPayslip(f, t => { st.textContent = t; });
     ocrPending = r;
-    const keys = Object.keys(r.abr).filter(k => k !== "summeLfd");
-    st.textContent = keys.length ? `${keys.length} Posten erkannt. Bitte kurz mit dem Foto vergleichen und dann übernehmen.` : "Es wurden keine Posten erkannt. Versuch ein schärferes Foto von oben, das ganze Blatt im Bild, oder trag die Werte von Hand ein.";
-    if (!keys.length) { st.className = "status err"; return; }
-    const sumTxt = r.check.summeVor != null ? (r.check.okVor ? `<div class="msg good">Summe der Vormonate ${eur(r.check.summeVor)} stimmt mit den erkannten Posten überein.</div>` : `<div class="msg warn">Erkannte Posten ergeben ${eur(r.check.sumVor)}, die Summe auf der Gehaltsmitteilung ist ${eur(r.check.summeVor)}. Es fehlt oder stimmt ein Posten nicht, bitte prüfen.</div>`) : `<div class="msg">Die Summe der Vormonate war nicht lesbar. Bitte die Posten mit dem Foto vergleichen.</div>`;
-    $("ocrResult").innerHTML = `${sumTxt}<div class="ocrlist" style="margin-top:8px"><span class="h eyebrow">Posten</span><span class="h eyebrow r">Menge</span><span class="h eyebrow r">Betrag</span>${keys.map(k => `<span>${esc(OCR_LABEL[k] || k)}</span><span class="r">${esc(r.abr[k].m || "")}</span><span class="r">${esc(r.abr[k].b || "")}</span>`).join("")}</div>
-      ${r.monat ? `<p class="hint">Erkannt: Gehaltsmitteilung für ${esc(r.monat)}.</p>` : ""}
+    const keys = OCR_ORDER.filter(k => r.abr[k]);
+    if (!keys.length) { st.className = "status err"; st.textContent = "Es wurden keine Posten erkannt. Versuch ein Foto von oben bei gutem Licht, das ganze Blatt im Bild, oder trag die Werte von Hand ein."; return; }
+    const unsure = keys.filter(k => !r.abr[k].sure);
+    st.textContent = `${keys.length} Posten erkannt${r.passes > 1 ? ` (${r.passes} Lesedurchgänge)` : ""}. ` + (unsure.length ? `${unsure.length} davon unsicher, bitte mit dem Papier vergleichen und bei Bedarf korrigieren.` : "Alle Werte sind durch Rechnung oder Summen bestätigt.");
+    // Posten, die laut Vivendi zu erwarten wären, aber nicht gelesen wurden
+    let missing = [];
+    try { const ev = S.cur && !S.months[S.cur].bz ? evalMonth(S.cur) : null; if (ev) missing = ev.rows.filter(x => x.exp != null && x.exp > 0 && !r.abr[x.p.key] && OCR_ORDER.includes(x.p.key)).map(x => x.p.key); } catch (e) {}
+    missing.forEach(k => { r.abr[k] = { m: "", b: "", sure: false, missing: true }; });
+    const shown = OCR_ORDER.filter(k => r.abr[k]);
+    const c = r.check;
+    const sumTxt = c.summeVor != null ? (c.okVor ? `<div class="msg good">Summe der Vormonate ${eur(c.summeVor)} passt zu den erkannten Posten.</div>` : `<div class="msg warn">Erkannte Posten ergeben ${eur(c.sumVor)}, auf der Gehaltsmitteilung steht als Summe der Vormonate ${eur(c.summeVor)}. Ein Posten fehlt oder ist falsch gelesen.</div>`) : `<div class="msg">Die Summe der Vormonate („Summe Gesamtbrutto“) war nicht lesbar.</div>`;
+    $("ocrResult").innerHTML = `${sumTxt}${missing.length ? `<div class="msg warn">Nicht gelesen, laut Vivendi aber zu erwarten: ${esc(missing.map(k => OCR_LABEL[k] || k).join(", "))}. Die Felder sind unten leer, bitte von Hand eintragen.</div>` : ""}
+      <div class="ocrlist" style="margin-top:8px"><span class="h eyebrow">Posten</span><span class="h eyebrow r">Menge</span><span class="h eyebrow r">Betrag €</span>
+      ${shown.map(k => { const v = r.abr[k], noM = ["grund", "kinder", "sz", "netLfd", "netVor", "nnlL", "nnlV"].includes(k);
+        return `<span class="${v.sure ? "" : "unsure"}">${v.sure ? "✓" : "⚠"} ${esc(OCR_LABEL[k] || k)}${v.guessed ? " <small class=muted>(vermutet)</small>" : ""}${v.missing ? " <small class=muted>(nicht gelesen)</small>" : ""}</span>
+        ${noM ? "<span></span>" : `<input class="num" inputmode="decimal" data-om="${k}" value="${esc(v.m || "")}" aria-label="${esc(OCR_LABEL[k] || k)} Menge">`}
+        <input class="num ${v.sure ? "" : "unsure"}" inputmode="decimal" data-ob="${k}" value="${esc(v.b || "")}" aria-label="${esc(OCR_LABEL[k] || k)} Betrag">`; }).join("")}</div>
+      <p class="hint">✓ bestätigt (Satz × Menge oder Summe stimmt) · ⚠ unsicher, bitte prüfen. Du kannst jeden Wert hier direkt ändern.</p>
       <div class="btns" style="margin-top:8px"><button type="button" id="ocrApply">Werte übernehmen</button><button type="button" class="sec" id="ocrDiscard">Verwerfen</button></div>`;
     $("ocrResult").hidden = false;
   } catch (err) { st.className = "status err"; st.textContent = "Das Foto ließ sich nicht auswerten: " + err.message; }
@@ -446,7 +459,7 @@ $("ocrResult").addEventListener("click", e => {
     let target = S.cur;
     if (ocrPending.monatKey) { const w = neighbour(ocrPending.monatKey, -2); if (S.months[w]) target = w; else if (w !== S.cur) { $("ocrStatus").className = "status err"; $("ocrStatus").textContent = `Das ist die Gehaltsmitteilung für ${monthName(ocrPending.monatKey)}. Lade zuerst das Vivendi-PDF für ${monthName(w)}, dann noch einmal fotografieren.`; return; } }
     const abr = Object.assign({}, S.months[target].abr || {});
-    for (const [k, v] of Object.entries(ocrPending.abr)) if (k !== "summeLfd") abr[k] = { m: v.m || (abr[k] || {}).m || "", b: v.b };
+    $("ocrResult").querySelectorAll("[data-ob]").forEach(el => { const k = el.dataset.ob, m = $("ocrResult").querySelector(`[data-om="${k}"]`); if (!el.value.trim()) return; abr[k] = { m: m ? m.value : ((abr[k] || {}).m || ""), b: el.value.trim() }; });
     S.months[target].abr = abr; save(); ocrPending = null;
     if (target !== S.cur) goMonth(target); else { buildAbr(); render(); }
     $("ocrResult").hidden = true; $("ocrStatus").className = "status"; $("ocrStatus").textContent = "Werte übernommen.";

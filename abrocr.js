@@ -95,14 +95,17 @@
         }
       }
       // Lesefehler im Betrag über Satz × Menge korrigieren
+      let alt = null, ok = false;
       if (calc != null && it.col === "vor") {
         const a = am.find(x => x.col === "vor") || am[am.length - 1];
         if (!a) am = [{ v: calc, col: "vor", calc: true }];
-        else if (Math.abs(a.v - calc) > 0.02) { a.v = calc; a.col = "vor"; a.calc = true; }
+        else if (Math.abs(a.v - calc) > 0.02) { alt = calc; a.col = "vor"; }
+        else ok = true;
       }
       raw.push({ key: it.key, text: t, am, q, calc });
       const put = (key, a, qq) => {
         const cur = res[key] || {};
+        cur.n = (cur.n || 0) + 1; cur.ok = (cur.ok == null ? true : cur.ok) && ok; if (alt != null) cur.alt = (it.sum && cur.alt != null ? cur.alt : (cur.b || 0)) + alt; else if (cur.alt != null) cur.alt += a.v;
         if (a.col === "lfd" || (a.col === "?" && it.col === "lfd")) cur.lfd = (it.sum && cur.lfd != null ? cur.lfd : 0) + a.v;
         else cur.b = (it.sum && cur.b != null ? cur.b : 0) + a.v;
         if (qq != null) cur.m = (it.sum && cur.m != null ? cur.m : 0) + qq;
@@ -130,6 +133,8 @@
     for (let i = 0; i < lines.length; i++) {
       const t = lineText(lines[i]);
       if (/auszahlungs/i.test(t)) { amounts(lines[i], cols).forEach(a => { out[a.col === "vor" ? "netVor" : "netLfd"] = a.v; }); }
+      if (/summe\s*ges|gesa?n?mtbrut/i.test(t)) { let am = amounts(lines[i], cols); if (!am.some(a => a.col === "vor") && i + 1 < lines.length) am = am.concat(amounts(lines[i + 1], cols).filter(a => a.col === "vor")); am.forEach(a => { out[a.col === "vor" ? "summeVor" : "summeLfd"] = a.v; }); }
+      if (/berweisungs/i.test(t)) { const am = amounts(lines[i], null); if (am.length) out.ueberw = am[am.length - 1].v; }
     }
     return out;
   }
@@ -138,8 +143,11 @@
   function toAbr(left, right) {
     const r = left.res, abr = {};
     for (const k of ["grund", "kinder"]) if (r[k] && (r[k].lfd != null || r[k].b != null)) abr[k] = { b: fmt(r[k].lfd != null ? r[k].lfd : r[k].b) };
-    for (const k of ["sz", "zg", "uezz", "so", "ft", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank"]) if (r[k]) abr[k] = { m: r[k].m != null ? fmt(r[k].m) : "", b: fmt(r[k].b != null ? r[k].b : r[k].lfd) };
-    if (r.summe && r.summe.lfd != null && r.grund && r.grund.lfd != null) {
+    for (const k of ["sz", "zg", "uezz", "so", "ft", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank"]) if (r[k]) { abr[k] = { m: r[k].m != null ? fmt(r[k].m) : "", b: fmt(r[k].b != null ? r[k].b : r[k].lfd) }; if (r[k].ok) abr[k].ok = true; if (r[k].alt != null) abr[k].alt = fmt(r[k].alt); if (r[k].guessed) abr[k].guessed = true; }
+    r.summe = r.summe || {};
+    if (right.summeLfd != null) r.summe.lfd = right.summeLfd;
+    if (right.summeVor != null) r.summe.b = right.summeVor;
+    if (r.summe.lfd != null && r.grund && r.grund.lfd != null) {
       const vl = r.vl && r.vl.lfd != null ? r.vl.lfd : 0, kinder = Math.round((r.summe.lfd - r.grund.lfd - vl) * 100) / 100;
       if (kinder >= 0 && (!abr.kinder || Math.abs(parseFloat(abr.kinder.b.replace(",", ".")) - kinder) > 0.02)) abr.kinder = { b: fmt(kinder) };
     }
@@ -149,10 +157,41 @@
     if (right.netVor != null) abr.netVor = { b: fmt(right.netVor) };
     // Summenabgleich Vormonate
     const sumVor = Object.entries(abr).filter(([k]) => !["grund", "kinder", "netLfd", "netVor", "nnlL", "nnlV", "summeLfd"].includes(k)).reduce((s, [, v]) => s + (parseFloat(String(v.b).replace(",", ".")) || 0), 0);
-    const check = { sumVor: Math.round(sumVor * 100) / 100, summeVor: r.summe ? r.summe.b : null, summeLfd: r.summe ? r.summe.lfd : null };
+    const VOR = ["sz", "zg", "uezz", "so", "ft", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank"];
+    const val = k => abr[k] ? parseFloat(String(abr[k].b).replace(",", ".")) || 0 : 0;
+    const sumOf = () => Math.round(VOR.reduce((s, k) => s + val(k), 0) * 100) / 100;
+    const check = { sumVor: sumOf(), summeVor: r.summe.b != null ? r.summe.b : null, summeLfd: r.summe.lfd != null ? r.summe.lfd : null, ueberw: right.ueberw != null ? right.ueberw : null };
+    // Summe passt nicht: einen Posten durch Satz × Menge ersetzen, wenn die Summe dann stimmt
+    if (check.summeVor != null && Math.abs(check.sumVor - check.summeVor) >= 0.02) {
+      for (const k of VOR) if (abr[k] && abr[k].alt) { const old = abr[k].b; abr[k].b = abr[k].alt; if (Math.abs(sumOf() - check.summeVor) < 0.02) { delete abr[k].alt; break; } abr[k].b = old; }
+      check.sumVor = sumOf();
+    }
     check.okVor = check.summeVor != null && Math.abs(check.sumVor - check.summeVor) < 0.02;
+    if (check.okVor) VOR.forEach(k => { if (abr[k]) abr[k].ok = true; });
+    const nl = abr.netLfd ? val("netLfd") : null, nv = abr.netVor ? val("netVor") : null;
+    check.okNet = check.ueberw != null && nl != null && nv != null && Math.abs(nl + nv - check.ueberw) < 0.02;
+    if (check.okNet) { abr.netLfd.ok = abr.netVor.ok = true; }
+    const lfd = (abr.grund ? val("grund") : NaN) + (abr.kinder ? val("kinder") : 0) + (r.vl && r.vl.lfd != null ? r.vl.lfd : 0);
+    check.okLfd = check.summeLfd != null && Math.abs(lfd - check.summeLfd) < 0.02;
     return { abr, check };
   }
   function parse(leftLines, rightLines) { const L = parseLeft(leftLines), R = parseRight(rightLines); return Object.assign(toAbr(L, R), { raw: L.raw }); }
-  root.AbrOCR = { parse, parseLeft, parseRight };
+  // Mehrere Lesedurchgänge zusammenführen: bestätigte Werte (Satz × Menge, Summen) zuerst, sonst Mehrheit.
+  // "sure": bestätigt oder in zwei Durchgängen gleich gelesen.
+  function combine(results) {
+    if (results.length === 1) { const r = results[0]; Object.values(r.abr).forEach(v => { v.sure = !!v.ok; }); return r; }
+    const keys = [...new Set(results.flatMap(r => Object.keys(r.abr)))], abr = {};
+    for (const k of keys) {
+      const c = results.map(r => r.abr[k]).filter(Boolean);
+      const okC = c.find(v => v.ok);
+      const cnt = new Map(); c.forEach(v => cnt.set(v.b, (cnt.get(v.b) || 0) + 1));
+      const best = okC || c.slice().sort((a, b) => cnt.get(b.b) - cnt.get(a.b))[0];
+      const m = c.map(v => v.m).find(x => x) || best.m || "";
+      abr[k] = Object.assign({}, best, { m, sure: !!okC || cnt.get(best.b) >= 2 });
+    }
+    const check = Object.assign({}, results.find(r => r.check.okVor) ? results.find(r => r.check.okVor).check : results[0].check);
+    return { abr, check, raw: results[0].raw };
+  }
+  const allSure = r => Object.entries(r.abr).every(([k, v]) => k === "summeLfd" || v.ok) && r.check.okVor && (r.check.ueberw == null || r.check.okNet);
+  root.AbrOCR = { parse, parseLeft, parseRight, combine, allSure };
 })(typeof window !== "undefined" ? window : globalThis);
