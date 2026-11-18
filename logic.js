@@ -82,8 +82,36 @@ function isZuschlagFeiertag(t) { if (isFeiertag(t)) return true; const E = easte
 const isWerktag = t => { const w = new Date(t).getUTCDay(); return w >= 1 && w <= 5 && !isFeiertag(t); };
 
 // ---------- Vivendi-Text lesen ----------
+// Textreihenfolge reparieren: Beim Lesen des PDFs im Browser landet die erste Zeile eines Tages (Zeit oder Kürzel)
+// manchmal über der Datumszeile oder ein Kürzel darunter. Diese Zeilen werden wieder in die Datumszeile gezogen.
+function fixVivOrder(text) {
+  const L = text.split("\n");
+  const isDate = l => /^\s*\d{2}\.\d{2}\.\d{4}\s+(Mo|Di|Mi|Do|Fr|Sa|So)\b/.test(l);
+  const hasTime = l => /\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/.test(l);
+  const CODE = /^(?:\d+\/\d+\*?|\/|[A-Za-zÄÖÜäöü][A-Za-zÄÖÜäöü0-9]*\*?)$/;
+  const isCodes = l => { const t = l.trim().split(/\s+/); return t.length >= 1 && t.length <= 3 && t[0] !== "" && t.every(x => CODE.test(x)) && !/^(Bereitschaftsdienst|Abrechnung|Kontensalden)$/i.test(l.trim()); };
+  const split = l => { const m = l.match(/^(\s*\d{2}\.\d{2}\.\d{4}\s+\S+)((?:\s+(?:\d+\/\d+\*?|\/|[A-Za-zÄÖÜäöü][A-Za-zÄÖÜäöü0-9]*\*?))*)(.*)$/); return m ? { d: m[1], codes: m[2].trim() ? m[2].trim().split(/\s+/) : [], rest: m[3] } : null; };
+  const join = p => [p.d, ...p.codes].join(" ") + p.rest;
+  for (let i = 0; i < L.length; i++) {
+    if (!isDate(L[i])) continue;
+    const p = split(L[i]); if (!p) continue;
+    const prev = i > 0 ? L[i - 1] : null, next = i + 1 < L.length ? L[i + 1] : null;
+    const hours = (p.rest.match(/-?\d+,\d{2}/) || ["0,00"])[0];
+    // fehlendes Kürzel aus der Zeile davor oder danach
+    if (p.codes.length < 3 && prev != null && !isDate(prev) && isCodes(prev) && !hasTime(prev)) { const t = prev.trim().split(/\s+/); p.codes.splice(1, 0, ...t.slice(0, 3 - p.codes.length)); L[i - 1] = ""; }
+    if (p.codes.length < 3 && next != null && !isDate(next) && isCodes(next) && !hasTime(next)) { const t = next.trim().split(/\s+/); p.codes.push(...t.slice(0, 3 - p.codes.length)); L[i + 1] = ""; }
+    // erste Zeitzeile steht über der Datumszeile: nur wenn der Tag Stunden hat, aber selbst keine Zeit
+    const prev2 = i > 0 ? L[i - 1] : null;
+    if (!hasTime(p.rest) && hours !== "0,00" && prev2 && !isDate(prev2) && hasTime(prev2)) {
+      const m = prev2.trim().match(/^((?:(?:\d+\/\d+\*?|\/|[A-Za-zÄÖÜäöü][A-Za-zÄÖÜäöü0-9]*\*?)\s+)*?)(\d{2}:\d{2}.*)$/);
+      if (m) { const cs = m[1].trim() ? m[1].trim().split(/\s+/) : []; if (p.codes.length < 3) p.codes.push(...cs.slice(0, 3 - p.codes.length)); p.rest = " " + m[2] + p.rest; L[i - 1] = ""; }
+    }
+    L[i] = join(p);
+  }
+  return L.filter(l => l !== "").join("\n");
+}
 function parseVivendi(text) {
-  text = text.replace(/\r/g, "");
+  text = fixVivOrder(text.replace(/\r/g, ""));
   const out = { monat: null, jahr: null, wochenStd: null, tagStd: null, lohnarten: [], tage: [] };
   const mm = text.match(new RegExp("-\\s*(" + MONATE.join("|") + ")\\s+(\\d{4})"));
   if (mm) { out.monat = MONATE.indexOf(mm[1]) + 1; out.jahr = +mm[2]; }
@@ -154,7 +182,7 @@ function dayKind(tag, codes) {
   return "leer";
 }
 // Dienstkürzel laut Dienstübersicht DKH/DKF (Stand 13.01.2025). soll = Bereitschaftsstunden je Dienst
-const KNOWN_CODES = {"BD1*": {"desc": "OP-BD Mo–Do (FÄ/ÄiW), 12:00–07:45, FNB", "soll": 11.55}, "BD2*": {"desc": "OP-BD Fr/vor Feiertag (FÄ/ÄiW), 12:00–09:00", "soll": 12.8}, "BD3*": {"desc": "BD Sa (OP bzw. OÄ/FÄ), 08:30–08:30", "soll": 23}, "BD4*": {"desc": "BD So/Feiertag (OP bzw. OÄ/FÄ), 08:00–08:00, FNB", "soll": 23}, "BD5*": {"desc": "OÄ/FÄ-BD Mo–Do, 11:00–08:00, FNB", "soll": 12.8}, "BD6*": {"desc": "OÄ/FÄ-BD Fr/vor Feiertag, 11:00–09:00", "soll": 13.8}, "BD7*": {"desc": "OP Henrike (früher Kirchrode) Mo–Do, 08:00–08:00, FNB", "soll": 15.8}, "BD8*": {"desc": "OP Henrike (früher Kirchrode) Fr/vor Feiertag, 09:00–09:00", "soll": 15.8}, "BD9*": {"desc": "OP Henrike (früher Kirchrode) Sa, 08:30–08:30", "soll": 23}, "BD10*": {"desc": "OP Henrike (früher Kirchrode) So/Feiertag, 08:00–08:00, FNB", "soll": 23}, "BD11*": {"desc": "Intensiv-BD, 14:45–08:15 (Mo–Do mit FNB)", "soll": 9.8}, "F3": {"desc": "Intensiv-Frühdienst, 07:15–15:27", "soll": null}, "F1": {"desc": "Regeldienst, 07:30–15:42", "soll": null}, "F1H": {"desc": "Regeldienst DKH, 07:30–15:42", "soll": null}, "FNB": {"desc": "Freizeitausgleich nach Bereitschaftsdienst", "soll": null}, "FNB*": {"desc": "Freizeitausgleich nach Bereitschaftsdienst", "soll": null}, "FZA": {"desc": "Freizeitausgleich", "soll": null}, "UD": {"desc": "Urlaub", "soll": null}, "BD12*": {"desc": "DKF BD Mo–Do (FÄ/ÄiW), 15:15–08:00, FNB", "soll": 8.55}, "BD13*": {"desc": "DKF BD Fr/vor Feiertag (FÄ/ÄiW), 15:15–09:15", "soll": 9.8}, "BD14*": {"desc": "DKF BD Sa (FÄ/ÄiW), 08:45–08:45", "soll": 16.3}, "BD15*": {"desc": "DKF BD So/Feiertag (FÄ/ÄiW), 08:15–08:15", "soll": 16.3}, "BD16*": {"desc": "DKF OÄ-BD Mo–Do, 14:30–08:00, FNB", "soll": 9}, "BD17*": {"desc": "DKF OÄ-BD Fr/vor Feiertag, 14:30–08:45", "soll": 9.75}, "BD18*": {"desc": "DKF OÄ-BD Sa, 08:15–08:15", "soll": 16.3}, "BD19*": {"desc": "DKF OÄ-BD So/Feiertag, 07:45–07:45", "soll": 16.3}, "BDV5": {"desc": "DKF BD Visite IMC Wochenende, Teilzeit 5 Std FZA", "soll": null}, "BDVA": {"desc": "DKF BD Visite IMC Wochenende, Auszahlung", "soll": null}, "BDVi": {"desc": "DKF BD Visite IMC Wochenende", "soll": null}, "ESF": {"desc": "Ersatzruhetag für Arbeit an Sonn-/Feiertagen (keine Arbeitszeit)", "soll": null}, "FFB": {"desc": "Frei für Bereitschaft (Freizeitausgleich aus BD-Stunden)", "soll": null}, "FNK": {"desc": "FNB nach BD, der wegen Krankheit ausfiel", "soll": null}, "ZG": {"desc": "Zeitgutschrift", "soll": null}, "AZV": {"desc": "Freier Tag Arbeitszeitverlängerung (§ 11 Abs. 2)", "soll": null}, "DBD": {"desc": "Dienst-/Arbeitsbefreiung (§ 21)", "soll": null}, "DBA": {"desc": "Dienst-/Arbeitsbefreiung (§ 21)", "soll": null}, "F2": {"desc": "Später Frühdienst DKF", "soll": null}, "NEF3": {"desc": "NEF 3, Mo–Fr 07:20–15:42", "soll": null}};
+const KNOWN_CODES = {"NEF3": {"desc": "NEF-Tagdienst mit anschließender Bereitschaft bis ca. 20 Uhr, kein Freizeitausgleich"}, "BD1*": {"desc": "OP-BD Mo–Do (FÄ/ÄiW), 12:00–07:45, FNB", "soll": 11.55}, "BD2*": {"desc": "OP-BD Fr/vor Feiertag (FÄ/ÄiW), 12:00–09:00", "soll": 12.8}, "BD3*": {"desc": "BD Sa (OP bzw. OÄ/FÄ), 08:30–08:30", "soll": 23}, "BD4*": {"desc": "BD So/Feiertag (OP bzw. OÄ/FÄ), 08:00–08:00, FNB", "soll": 23}, "BD5*": {"desc": "OÄ/FÄ-BD Mo–Do, 11:00–08:00, FNB", "soll": 12.8}, "BD6*": {"desc": "OÄ/FÄ-BD Fr/vor Feiertag, 11:00–09:00", "soll": 13.8}, "BD7*": {"desc": "OP Henrike (früher Kirchrode) Mo–Do, 08:00–08:00, FNB", "soll": 15.8}, "BD8*": {"desc": "OP Henrike (früher Kirchrode) Fr/vor Feiertag, 09:00–09:00", "soll": 15.8}, "BD9*": {"desc": "OP Henrike (früher Kirchrode) Sa, 08:30–08:30", "soll": 23}, "BD10*": {"desc": "OP Henrike (früher Kirchrode) So/Feiertag, 08:00–08:00, FNB", "soll": 23}, "BD11*": {"desc": "Intensiv-BD, 14:45–08:15 (Mo–Do mit FNB)", "soll": 9.8}, "F3": {"desc": "Intensiv-Frühdienst, 07:15–15:27", "soll": null}, "F1": {"desc": "Regeldienst, 07:30–15:42", "soll": null}, "F1H": {"desc": "Regeldienst DKH, 07:30–15:42", "soll": null}, "FNB": {"desc": "Freizeitausgleich nach Bereitschaftsdienst", "soll": null}, "FNB*": {"desc": "Freizeitausgleich nach Bereitschaftsdienst", "soll": null}, "FZA": {"desc": "Freizeitausgleich", "soll": null}, "UD": {"desc": "Urlaub", "soll": null}, "BD12*": {"desc": "DKF BD Mo–Do (FÄ/ÄiW), 15:15–08:00, FNB", "soll": 8.55}, "BD13*": {"desc": "DKF BD Fr/vor Feiertag (FÄ/ÄiW), 15:15–09:15", "soll": 9.8}, "BD14*": {"desc": "DKF BD Sa (FÄ/ÄiW), 08:45–08:45", "soll": 16.3}, "BD15*": {"desc": "DKF BD So/Feiertag (FÄ/ÄiW), 08:15–08:15", "soll": 16.3}, "BD16*": {"desc": "DKF OÄ-BD Mo–Do, 14:30–08:00, FNB", "soll": 9}, "BD17*": {"desc": "DKF OÄ-BD Fr/vor Feiertag, 14:30–08:45", "soll": 9.75}, "BD18*": {"desc": "DKF OÄ-BD Sa, 08:15–08:15", "soll": 16.3}, "BD19*": {"desc": "DKF OÄ-BD So/Feiertag, 07:45–07:45", "soll": 16.3}, "BDV5": {"desc": "DKF BD Visite IMC Wochenende, Teilzeit 5 Std FZA", "soll": null}, "BDVA": {"desc": "DKF BD Visite IMC Wochenende, Auszahlung", "soll": null}, "BDVi": {"desc": "DKF BD Visite IMC Wochenende", "soll": null}, "ESF": {"desc": "Ersatzruhetag für Arbeit an Sonn-/Feiertagen (keine Arbeitszeit)", "soll": null}, "FFB": {"desc": "Frei für Bereitschaft (Freizeitausgleich aus BD-Stunden)", "soll": null}, "FNK": {"desc": "FNB nach BD, der wegen Krankheit ausfiel", "soll": null}, "ZG": {"desc": "Zeitgutschrift", "soll": null}, "AZV": {"desc": "Freier Tag Arbeitszeitverlängerung (§ 11 Abs. 2)", "soll": null}, "DBD": {"desc": "Dienst-/Arbeitsbefreiung (§ 21)", "soll": null}, "DBA": {"desc": "Dienst-/Arbeitsbefreiung (§ 21)", "soll": null}, "F2": {"desc": "Später Frühdienst DKF", "soll": null}, "NEF3": {"desc": "NEF 3, Mo–Fr 07:20–15:42", "soll": null}};
 const knownCode = c => KNOWN_CODES[c] || KNOWN_CODES[String(c).replace(/F$/, "")] || null;
 const KIND_TXT = { bd: "Bereitschaftsdienst", dienst: "Dienst", fnb: "Freizeitausgleich nach BD", fza: "Freizeitausgleich", urlaub: "Urlaub", krank: "Krank", frei: "Frei", leer: "Frei", normal: "Normaler Dienst", fza_pflichtig: "Dienst, später Freizeitausgleich" };
 const OHNE_ZUSCHLAG = ["frei","urlaub","krank","fnb","fza"];

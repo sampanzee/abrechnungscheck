@@ -1,5 +1,5 @@
 // Offline-Cache: App-Dateien beim Installieren, Bibliotheken von CDNs beim ersten Abruf
-const VERSION = "abrcheck-1.1.0";
+const VERSION = "abrcheck-1.2.0";
 const SHELL = ["./", "index.html", "style.css", "lohnsteuer.js", "netto.js", "logic.js", "abrocr.js", "ocr.js", "app.js",
   "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;

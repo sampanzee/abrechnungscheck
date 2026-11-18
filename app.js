@@ -1,6 +1,6 @@
 // Abrechnungscheck – Oberfläche, Speicher, Einrichtung, Netto, Tarif-Editor, Fotoerkennung
 "use strict";
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const KEY = "abrcheck.app.v1";
 
 const DEF_SET = {
@@ -246,6 +246,8 @@ $("codesTbl").addEventListener("change", e => {
 
 // ---------- Verlauf ----------
 const delArm = new Set();
+const openRows = new Set();
+document.getElementById("result").addEventListener("toggle", e => { const k = e.target.dataset && e.target.dataset.key; if (!k) return; if (e.target.open) openRows.add(k); else openRows.delete(k); }, true);
 function buildHist() {
   const keys = Object.keys(S.months).sort().reverse();
   $("histShort").textContent = `${keys.length} ${keys.length === 1 ? "Monat" : "Monate"}`;
@@ -337,14 +339,15 @@ function render() {
   $("warnings").innerHTML = msgs.map(m => `<div class="msg ${m.lvl}">${esc(m.t)}</div>`).join("");
   $("warnings").hidden = !msgs.length;
 
-  const chip = { ok: "stimmt", bad: "weicht ab", open: "ungeprüft" };
+  const chip = { ok: "geprüft", bad: "weicht ab", open: "ungeprüft" };
   $("result").innerHTML = bz ? `<div class="row open"><div class="lbl">Dieser Monat zählt nur für Dienste, Nachtstunden und die BD-Regeln. Die Gehaltsmitteilung wird nicht geprüft (Einstellung in Abschnitt 2).</div></div>` : rows.length ? rows.map(r => {
     const notes = r.notes.map(n => typeof n === "string" ? `<div class="note">${esc(n)}</div>` : `<div class="note ${n.bad ? "bad" : ""}">${esc(n.t)}</div>`).join("");
     const amts = r.p.kind === "open"
       ? `<span><i>Abrechnung</i> ${eur(r.aB)}</span>${r.q != null ? `<span><i>Vivendi</i> ${de(r.q)} ${r.p.unit}</span>` : ""}`
       : `<span><i>Erwartet</i> ${eur(r.exp)}</span><span><i>Abrechnung</i> ${eur(r.aB)}</span>${r.aB != null && r.exp != null && Math.abs(r.aB - r.exp) > 0.02 ? `<span style="color:var(--bad)"><i>Diff.</i> ${de(r2(r.aB - r.exp))} €</span>` : ""}`;
-    return `<div class="row ${r.status}"><div class="lbl">${esc(r.p.label)}<span class="code">${esc(r.p.code)}</span></div><span class="chip ${r.status}">${chip[r.status]}</span>
-      <div class="amts">${amts}</div>${r.formula ? `<div class="note mono">${esc(r.formula)}</div>` : ""}${notes}</div>`;
+    const shown = r.aB != null ? r.aB : r.exp, diff = r.aB != null && r.exp != null && Math.abs(r.aB - r.exp) > 0.02 ? r2(r.aB - r.exp) : null;
+    return `<details class="row ${r.status}" data-key="${r.p.key}" ${openRows.has(r.p.key) ? "open" : ""}><summary class="rsum"><span class="lbl">${esc(r.p.label)}</span><span class="val">${shown == null ? "–" : eur(shown)}${diff != null ? `<small class="d">${diff > 0 ? "+" : ""}${de(diff)} €</small>` : ""}</span><span class="chip ${r.status}">${chip[r.status]}</span></summary>
+      <div class="rdet"><div class="code">${esc(r.p.code)}</div><div class="amts">${amts}</div>${r.formula ? `<div class="note mono">${esc(r.formula)}</div>` : ""}${notes}</div></details>`;
   }).join("") : `<div class="row open"><div class="lbl">Keine Posten gefunden.</div></div>`;
 
   const unknown = viv.lohnarten.filter(l => !knownLa(l.name));
