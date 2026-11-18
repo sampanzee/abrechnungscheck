@@ -110,6 +110,26 @@ function fixVivOrder(text) {
   }
   return L.filter(l => l !== "").join("\n");
 }
+// Lohnarten-Übersicht (Seite 2). Im PDF stehen die Spalten AZK | Lohnarten | Vertragsdaten zeilenweise durcheinander:
+// erst die Werte der anderen Spalten entfernen, dann jeder Lohnart den nächsten Betrag zuordnen.
+function parseLohnarten(text) {
+  const li = text.lastIndexOf("Lohnarten"); if (li < 0) return [];
+  let sec = text.slice(li + 9); const ke = sec.search(/Kontensalden|Mitarbeiter\/|Abrechnung\\/); if (ke >= 0) sec = sec.slice(0, ke);
+  const AMT = "-?\\d{1,3}(?:\\.\\d{3})*,\\d{2}";
+  sec = sec.replace(new RegExp("(Ist-Stunden|Soll-Stunden|Differenz|Vortrag|sonstige Buchungen|Übertrag|Resturlaub|Stelle|Tage\\/Woche|Stunden\\/Woche|Stunden\\/Tag|\\bS\\.)\\s*" + AMT, "g"), " ")
+    .replace(/_Entlastungstage|\(Tag\)|Vertragsdaten/g, " ");
+  const out = [], pend = [], isAmt = t => new RegExp("^" + AMT + "$").test(t);
+  for (const line of sec.split("\n")) {
+    const toks = line.trim().split(/\s+/).filter(Boolean); let cur = null;
+    for (let i = 0; i < toks.length; i++) {
+      const m = toks[i].match(/^(\d{10})\/(.*)$/) || (/^\d{10}$/.test(toks[i]) && toks[i + 1] && toks[i + 1].startsWith("/") ? [null, toks[i], toks[++i].slice(1)] : null);
+      if (m) { cur = { nr: m[1], name: m[2] ? [m[2]] : [], menge: null }; out.push(cur); pend.push(cur); continue; }
+      if (isAmt(toks[i])) { const p = pend.find(x => x.menge == null); if (p) { p.menge = num(toks[i]); pend.splice(pend.indexOf(p), 1); } cur = null; continue; }
+      if (cur) cur.name.push(toks[i]);
+    }
+  }
+  return out.filter(x => x.menge != null).map(x => ({ nr: x.nr, name: x.name.join(" ").trim(), menge: x.menge }));
+}
 function parseVivendi(text) {
   text = fixVivOrder(text.replace(/\r/g, ""));
   const out = { monat: null, jahr: null, wochenStd: null, tagStd: null, lohnarten: [], tage: [] };
@@ -120,12 +140,7 @@ function parseVivendi(text) {
   const az = text.match(/Übertrag\s+(-?[\d.,]+)/); if (az) out.azk = num(az[1]);
   const ru = text.match(/Resturlaub\s+(-?[\d.,]+)/); if (ru) out.resturlaub = num(ru[1]);
 
-  const li = text.lastIndexOf("Lohnarten");
-  if (li >= 0) {
-    const sec = text.slice(li + 9);
-    const re = /(\d{10})\s*\/\s*(.+?)\s+(-?\d{1,3}(?:\.\d{3})*,\d{2})/g; let m;
-    while ((m = re.exec(sec))) out.lohnarten.push({ nr: m[1], name: m[2].trim().replace(/\s+/g, " "), menge: num(m[3]) });
-  }
+  out.lohnarten = parseLohnarten(text);
 
   const reD = /(\d{2})\.(\d{2})\.(\d{4})\s+(Mo|Di|Mi|Do|Fr|Sa|So)\b/g; const pos = []; let d;
   while ((d = reD.exec(text))) pos.push({ i: d.index, end: reD.lastIndex, y: +d[3], m: +d[2], d: +d[1], wd: d[4] });

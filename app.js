@@ -1,6 +1,6 @@
 // Abrechnungscheck – Oberfläche, Speicher, Einrichtung, Netto, Tarif-Editor, Fotoerkennung
 "use strict";
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const KEY = "abrcheck.app.v1";
 
 const DEF_SET = {
@@ -389,12 +389,16 @@ function render() {
 function goMonth(k) { if (!k || !S.months[k]) return; S.cur = k; save(); delArm.clear(); buildAbr(); render(); $("ocrResult").hidden = true; $("ocrStatus").hidden = true; }
 
 // ---------- Vivendi ----------
+function quickMsg(t, err) { const q = $("quickStatus"); q.hidden = false; q.className = "status" + (err ? " err" : ""); q.textContent = t; }
 function loadViv(text) {
   const p = parseVivendi(text);
-  if (!p.jahr) { $("vivStatus").hidden = false; $("vivStatus").className = "status err"; $("vivStatus").textContent = "Monat konnte nicht erkannt werden. Ist das die Einzelabrechnung aus Vivendi?"; return; }
+  if (!p.jahr) { quickMsg("Monat konnte nicht erkannt werden. Ist das die Einzelabrechnung aus Vivendi?", true); return; }
   const key = monthKey(p.jahr, p.monat); const old = S.months[key];
   S.months[key] = Object.assign({ abr: {} }, old || {}, { vivText: text });
+  let extra = "";
+  if (S.pendingAbr && S.pendingAbr[key]) { S.months[key].abr = Object.assign({}, S.months[key].abr || {}, S.pendingAbr[key]); delete S.pendingAbr[key]; extra = ` Die schon fotografierte Abrechnung ${abrName(key)} ist jetzt zugeordnet.`; }
   S.cur = key;
+  quickMsg(`Vivendi ${monthName(key)} geladen${old ? " (ersetzt)" : ""}. Zugehörige Abrechnung: ${abrName(key)}.${extra}`);
   if (p.wochenStd) S.set.woStd = p.wochenStd; if (p.tagStd) S.set.tagStd = p.tagStd;
   save(); buildSettings(); buildAbr(); render();
   $("sec-viv").open = false; window.scrollTo({ top: 0, behavior: "smooth" });
@@ -412,12 +416,13 @@ async function pdfToText(file) {
   return out.join("\n");
 }
 $("pdfBtn").addEventListener("click", () => $("pdf").click());
+$("quickPdf").addEventListener("click", () => $("pdf").click());
 $("pdf").addEventListener("change", async e => {
   const files = [...e.target.files]; if (!files.length) return;
-  $("vivStatus").hidden = false; $("vivStatus").className = "status"; $("vivStatus").textContent = "PDF wird gelesen …";
+  quickMsg("PDF wird gelesen …");
   for (const f of files) {
     try { const t = await pdfToText(f); $("vivText").value = t; loadViv(t); }
-    catch (err) { $("vivStatus").className = "status err"; $("vivStatus").textContent = "Das PDF ließ sich nicht lesen (" + err.message + "). Kopiere den Text aus dem PDF und füge ihn unten ein."; }
+    catch (err) { quickMsg("Das PDF ließ sich nicht lesen (" + err.message + "). Unter „1 · Vivendi-Monatsauswertung“ kannst du den Text auch einfügen.", true); }
   }
   e.target.value = "";
 });
@@ -427,25 +432,35 @@ $("useText").addEventListener("click", () => loadViv($("vivText").value));
 const OCR_LABEL = Object.assign(Object.fromEntries(POSTEN.map(p => [p.key, p.label])), { netLfd: "Auszahlung lfd. Monat", netVor: "Auszahlung Vormonate", nnlL: "SV-pflichtige ZV-Umlage lfd.", nnlV: "SV-pflichtige ZV-Umlage Vormonate", summeLfd: "Summe lfd. Monat" });
 let ocrPending = null;
 const OCR_ORDER = ["grund", "kinder", "sz", "zg", "uezz", "so", "ft", "nacht", "x2412", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank", "nnlL", "nnlV", "netLfd", "netVor"];
+let ocrTarget = null;
 $("photoBtn").addEventListener("click", () => $("photo").click());
-$("photo").addEventListener("change", async e => {
+$("camBtn").addEventListener("click", () => $("photoCam").click());
+$("photoCam").addEventListener("change", e => onPhoto(e));
+$("photo").addEventListener("change", e => onPhoto(e));
+async function onPhoto(e) {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  const st = $("ocrStatus"); st.hidden = false; st.className = "status"; $("ocrResult").hidden = true;
+  const st = $("ocrStatus"); st.hidden = false; st.className = "status"; $("ocrResult").hidden = true; $("quickStatus").hidden = true;
   try {
     const r = await PayslipOCR.readPayslip(f, t => { st.textContent = t; });
     ocrPending = r;
+    // Arbeitsmonat = Abrechnungsmonat − 2
+    ocrTarget = { key: S.cur, pending: false, known: false };
+    if (r.monatKey) { const w = neighbour(r.monatKey, -2); ocrTarget = { key: w, pending: !S.months[w] || !S.months[w].vivText, known: true }; if (!ocrTarget.pending && w !== S.cur) { goMonth(w); st.hidden = false; } }
+    const tgtHtml = r.monatKey
+      ? `<div class="msg ${ocrTarget.pending ? "" : "good"}">Gehaltsmitteilung für <b>${esc(monthName(r.monatKey))}</b> erkannt, gehört zum Arbeitsmonat <b>${esc(monthName(ocrTarget.key))}</b>.${ocrTarget.pending ? ` Für diesen Monat ist noch kein Vivendi-PDF geladen. Die Werte werden gespeichert und zugeordnet, sobald du es lädst.` : ""}</div>`
+      : `<label class="f">Monat nicht erkannt. Gehaltsmitteilung für<select id="ocrMonth">${Object.keys(S.months).sort().reverse().map(k => `<option value="${k}" ${k === S.cur ? "selected" : ""}>${abrName(k)} (Arbeitsmonat ${monthName(k)})</option>`).join("")}</select></label>`;
     const keys = OCR_ORDER.filter(k => r.abr[k]);
     if (!keys.length) { st.className = "status err"; st.textContent = "Es wurden keine Posten erkannt. Versuch ein Foto von oben bei gutem Licht, das ganze Blatt im Bild, oder trag die Werte von Hand ein."; return; }
     const unsure = keys.filter(k => !r.abr[k].sure);
     st.textContent = `${keys.length} Posten erkannt${r.passes > 1 ? ` (${r.passes} Lesedurchgänge)` : ""}. ` + (unsure.length ? `${unsure.length} davon unsicher, bitte mit dem Papier vergleichen und bei Bedarf korrigieren.` : "Alle Werte sind durch Rechnung oder Summen bestätigt.");
     // Posten, die laut Vivendi zu erwarten wären, aber nicht gelesen wurden
     let missing = [];
-    try { const ev = S.cur && !S.months[S.cur].bz ? evalMonth(S.cur) : null; if (ev) missing = ev.rows.filter(x => x.exp != null && x.exp > 0 && !r.abr[x.p.key] && OCR_ORDER.includes(x.p.key)).map(x => x.p.key); } catch (e) {}
+    try { const ev = !ocrTarget.pending && ocrTarget.key && S.months[ocrTarget.key] && !S.months[ocrTarget.key].bz ? evalMonth(ocrTarget.key) : null; if (ev) missing = ev.rows.filter(x => x.exp != null && x.exp > 0 && !r.abr[x.p.key] && OCR_ORDER.includes(x.p.key)).map(x => x.p.key); } catch (e) {}
     missing.forEach(k => { r.abr[k] = { m: "", b: "", sure: false, missing: true }; });
     const shown = OCR_ORDER.filter(k => r.abr[k]);
     const c = r.check;
     const sumTxt = c.summeVor != null ? (c.okVor ? `<div class="msg good">Summe der Vormonate ${eur(c.summeVor)} passt zu den erkannten Posten.</div>` : `<div class="msg warn">Erkannte Posten ergeben ${eur(c.sumVor)}, auf der Gehaltsmitteilung steht als Summe der Vormonate ${eur(c.summeVor)}. Ein Posten fehlt oder ist falsch gelesen.</div>`) : `<div class="msg">Die Summe der Vormonate („Summe Gesamtbrutto“) war nicht lesbar.</div>`;
-    $("ocrResult").innerHTML = `${sumTxt}${missing.length ? `<div class="msg warn">Nicht gelesen, laut Vivendi aber zu erwarten: ${esc(missing.map(k => OCR_LABEL[k] || k).join(", "))}. Die Felder sind unten leer, bitte von Hand eintragen.</div>` : ""}
+    $("ocrResult").innerHTML = `${tgtHtml}${sumTxt}${missing.length ? `<div class="msg warn">Nicht gelesen, laut Vivendi aber zu erwarten: ${esc(missing.map(k => OCR_LABEL[k] || k).join(", "))}. Die Felder sind unten leer, bitte von Hand eintragen.</div>` : ""}
       <div class="ocrlist" style="margin-top:8px"><span class="h eyebrow">Posten</span><span class="h eyebrow r">Menge</span><span class="h eyebrow r">Betrag €</span>
       ${shown.map(k => { const v = r.abr[k], noM = ["grund", "kinder", "sz", "netLfd", "netVor", "nnlL", "nnlV"].includes(k);
         return `<span class="${v.sure ? "" : "unsure"}">${v.sure ? "✓" : "⚠"} ${esc(OCR_LABEL[k] || k)}${v.guessed ? " <small class=muted>(vermutet)</small>" : ""}${v.missing ? " <small class=muted>(nicht gelesen)</small>" : ""}</span>
@@ -455,17 +470,24 @@ $("photo").addEventListener("change", async e => {
       <div class="btns" style="margin-top:8px"><button type="button" id="ocrApply">Werte übernehmen</button><button type="button" class="sec" id="ocrDiscard">Verwerfen</button></div>`;
     $("ocrResult").hidden = false;
   } catch (err) { st.className = "status err"; st.textContent = "Das Foto ließ sich nicht auswerten: " + err.message; }
-});
+}
 $("ocrResult").addEventListener("click", e => {
   if (e.target.id === "ocrDiscard") { $("ocrResult").hidden = true; $("ocrStatus").hidden = true; ocrPending = null; }
   if (e.target.id === "ocrApply" && ocrPending) {
-    let target = S.cur;
-    if (ocrPending.monatKey) { const w = neighbour(ocrPending.monatKey, -2); if (S.months[w]) target = w; else if (w !== S.cur) { $("ocrStatus").className = "status err"; $("ocrStatus").textContent = `Das ist die Gehaltsmitteilung für ${monthName(ocrPending.monatKey)}. Lade zuerst das Vivendi-PDF für ${monthName(w)}, dann noch einmal fotografieren.`; return; } }
-    const abr = Object.assign({}, S.months[target].abr || {});
-    $("ocrResult").querySelectorAll("[data-ob]").forEach(el => { const k = el.dataset.ob, m = $("ocrResult").querySelector(`[data-om="${k}"]`); if (!el.value.trim()) return; abr[k] = { m: m ? m.value : ((abr[k] || {}).m || ""), b: el.value.trim() }; });
-    S.months[target].abr = abr; save(); ocrPending = null;
+    const sel = $("ocrMonth"); if (sel) ocrTarget = { key: sel.value, pending: false };
+    const vals = {};
+    $("ocrResult").querySelectorAll("[data-ob]").forEach(el => { const k = el.dataset.ob, m = $("ocrResult").querySelector(`[data-om="${k}"]`); if (!el.value.trim()) return; vals[k] = { m: m ? m.value : "", b: el.value.trim() }; });
+    ocrPending = null; $("ocrResult").hidden = true;
+    if (ocrTarget.pending || !S.months[ocrTarget.key]) {
+      S.pendingAbr = S.pendingAbr || {}; S.pendingAbr[ocrTarget.key] = vals; save();
+      $("ocrStatus").className = "status"; $("ocrStatus").textContent = `Gespeichert. Lade das Vivendi-PDF für ${monthName(ocrTarget.key)}, dann wird die Abrechnung automatisch zugeordnet.`;
+      return;
+    }
+    const target = ocrTarget.key, abr = Object.assign({}, S.months[target].abr || {});
+    for (const [k, v] of Object.entries(vals)) abr[k] = { m: v.m || ((abr[k] || {}).m || ""), b: v.b };
+    S.months[target].abr = abr; save();
     if (target !== S.cur) goMonth(target); else { buildAbr(); render(); }
-    $("ocrResult").hidden = true; $("ocrStatus").className = "status"; $("ocrStatus").textContent = "Werte übernommen.";
+    $("ocrStatus").hidden = false; $("ocrStatus").className = "status"; $("ocrStatus").textContent = `Werte übernommen für Abrechnung ${abrName(target)}.`;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 });
@@ -482,11 +504,11 @@ $("planSpaet").addEventListener("change", e => { S.months[S.cur].planSpaet = e.t
 $("bzMonth").addEventListener("change", e => { S.months[S.cur].bz = e.target.checked; save(); render(); });
 
 // ---------- Sicherung ----------
-function backupJson() { return JSON.stringify({ app: "abrechnungscheck", version: 3, exportiert: new Date().toISOString(), set: S.set, codes: S.codes, months: S.months, urlBase: S.urlBase, tarif: S.tarif }); }
+function backupJson() { return JSON.stringify({ app: "abrechnungscheck", version: 3, exportiert: new Date().toISOString(), set: S.set, codes: S.codes, months: S.months, urlBase: S.urlBase, tarif: S.tarif, pendingAbr: S.pendingAbr || {} }); }
 function importJson(txt) {
   const d = JSON.parse(txt);
   if (!d || d.app !== "abrechnungscheck" || !d.months) throw new Error("keine Sicherung");
-  Object.assign(S.months, d.months); Object.assign(S.codes, d.codes || {}); Object.assign(S.urlBase, d.urlBase || {});
+  Object.assign(S.months, d.months); Object.assign(S.codes, d.codes || {}); Object.assign(S.urlBase, d.urlBase || {}); if (d.pendingAbr) S.pendingAbr = Object.assign(S.pendingAbr || {}, d.pendingAbr);
   if (d.set) S.set = Object.assign({}, S.set, d.set, { setupDone: true });
   if (d.tarif) { S.tarif = d.tarif; setTarif(S.tarif); }
   if (!S.months[S.cur]) S.cur = Object.keys(S.months).sort().pop() || null;

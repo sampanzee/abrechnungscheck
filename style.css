@@ -158,3 +158,10 @@ details.row[open] > summary .lbl::after { content: " ⌄"; }
 details.row .rdet { display: grid; gap: 4px; padding: 0 16px 12px; }
 details.row .rdet .code { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); margin: 0; }
 details.row > summary .lbl { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
+.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.quick > #quickPdf { grid-column: 1 / -1; }
+.quick > .status, .quick > #ocrResult { grid-column: 1 / -1; }
+.quick > #ocrResult { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.quick > #ocrResult[hidden] { display: none; }
+.ocrlist { grid-template-columns: minmax(0, 1fr) 5.2em 6.4em; }
+.ocrlist input.num { width: 100%; min-width: 0; }

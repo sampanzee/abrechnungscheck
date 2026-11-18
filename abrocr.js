@@ -134,6 +134,8 @@
       const t = lineText(lines[i]);
       if (/auszahlungs/i.test(t)) { amounts(lines[i], cols).forEach(a => { out[a.col === "vor" ? "netVor" : "netLfd"] = a.v; }); }
       if (/summe\s*ges|gesa?n?mtbrut/i.test(t)) { let am = amounts(lines[i], cols); if (!am.some(a => a.col === "vor") && i + 1 < lines.length) am = am.concat(amounts(lines[i + 1], cols).filter(a => a.col === "vor")); am.forEach(a => { out[a.col === "vor" ? "summeVor" : "summeLfd"] = a.v; }); }
+      const mo = t.match(/f[üu]r\s+(Januar|Februar|M[äa]rz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+(20\d\d)/i);
+      if (mo && !out.monatKey) { const M = ["januar","februar","märz","april","mai","juni","juli","august","september","oktober","november","dezember"]; const i = M.indexOf(mo[1].toLowerCase().replace("marz", "märz")); if (i >= 0) { out.monatKey = mo[2] + "-" + String(i + 1).padStart(2, "0"); out.monat = mo[1] + " " + mo[2]; } }
       if (/berweisungs/i.test(t)) { const am = amounts(lines[i], null); if (am.length) out.ueberw = am[am.length - 1].v; }
     }
     return out;
@@ -175,7 +177,7 @@
     check.okLfd = check.summeLfd != null && Math.abs(lfd - check.summeLfd) < 0.02;
     return { abr, check };
   }
-  function parse(leftLines, rightLines) { const L = parseLeft(leftLines), R = parseRight(rightLines); return Object.assign(toAbr(L, R), { raw: L.raw }); }
+  function parse(leftLines, rightLines) { const L = parseLeft(leftLines), R = parseRight(rightLines); return Object.assign(toAbr(L, R), { raw: L.raw, monatKey: R.monatKey || null, monat: R.monat || null }); }
   // Mehrere Lesedurchgänge zusammenführen: bestätigte Werte (Satz × Menge, Summen) zuerst, sonst Mehrheit.
   // "sure": bestätigt oder in zwei Durchgängen gleich gelesen.
   function combine(results) {
@@ -190,7 +192,8 @@
       abr[k] = Object.assign({}, best, { m, sure: !!okC || cnt.get(best.b) >= 2 });
     }
     const check = Object.assign({}, results.find(r => r.check.okVor) ? results.find(r => r.check.okVor).check : results[0].check);
-    return { abr, check, raw: results[0].raw };
+    const mk = results.find(r => r.monatKey);
+    return { abr, check, raw: results[0].raw, monatKey: mk ? mk.monatKey : null, monat: mk ? mk.monat : null };
   }
   const allSure = r => Object.entries(r.abr).every(([k, v]) => k === "summeLfd" || v.ok) && r.check.okVor && (r.check.ueberw == null || r.check.okNet);
   root.AbrOCR = { parse, parseLeft, parseRight, combine, allSure };

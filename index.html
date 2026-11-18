@@ -31,6 +31,17 @@
     </div>
   </header>
 
+  <section class="quick" id="quick" aria-label="Neue Unterlagen laden">
+    <input type="file" id="photoCam" class="vh" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+    <input type="file" id="photo" class="vh" accept="image/*" tabindex="-1" aria-hidden="true">
+    <button type="button" id="quickPdf">Vivendi-PDF laden</button>
+    <button type="button" id="camBtn">Abrechnung fotografieren</button>
+    <button type="button" class="sec" id="photoBtn">Foto aus Galerie</button>
+    <div class="status" id="quickStatus" hidden></div>
+    <div class="status" id="ocrStatus" hidden></div>
+    <div id="ocrResult" hidden></div>
+  </section>
+
   <section class="empty" id="welcome" hidden>
     <h2>Willkommen</h2>
     <p class="hint">Der Abrechnungscheck rechnet deine Zulagen aus der Vivendi-Monatsauswertung nach und vergleicht sie mit deiner Gehaltsmitteilung. Alles läuft nur auf diesem Gerät, nichts wird hochgeladen.</p>
@@ -75,13 +86,9 @@
     <summary><h2>2 · Gehaltsmitteilung</h2><span class="muted" id="abrShort"></span></summary>
     <div class="body">
       <div class="btns">
-        <input type="file" id="photo" class="vh" accept="image/*" tabindex="-1" aria-hidden="true">
-        <button type="button" id="photoBtn">Gehaltsmitteilung fotografieren</button>
         <button type="button" class="sec" id="clearAbr">Alle Felder leeren</button>
       </div>
-      <div class="status" id="ocrStatus" hidden></div>
-      <div id="ocrResult" hidden></div>
-      <p class="hint">Oder von Hand eintragen: Posten aus der Spalte „Vormonate“ (Stunden bzw. Tage und Betrag), Entgelt und Kinderzulage aus „lfd. Monat“. Leere Felder werden nicht geprüft. Die beiden Zeilen „ZZ während BD“ gehören zu Na&nbsp;1 und Na&nbsp;2. „JNN Oster/Pfingst“ und „JNN 1. Mai/Weihn“ zählen zum Feiertag, alle „FZZ Stufe“-Zeilen zusammen zu „Feiertag im BD“.</p>
+      <p class="hint">Am einfachsten oben über „Abrechnung fotografieren“. Oder von Hand eintragen: Posten aus der Spalte „Vormonate“ (Stunden bzw. Tage und Betrag), Entgelt und Kinderzulage aus „lfd. Monat“. Leere Felder werden nicht geprüft. Die beiden Zeilen „ZZ während BD“ gehören zu Na&nbsp;1 und Na&nbsp;2. „JNN Oster/Pfingst“ und „JNN 1. Mai/Weihn“ zählen zum Feiertag, alle „FZZ Stufe“-Zeilen zusammen zu „Feiertag im BD“.</p>
       <label class="check" for="planSpaet"><input type="checkbox" id="planSpaet"> Dienstplan für diesen Monat zu spät veröffentlicht (weniger als 6 Wochen vorher)</label>
       <label class="check" for="bzMonth"><input type="checkbox" id="bzMonth"> Nur Dienste zählen, Abrechnung nicht prüfen (z.&nbsp;B. Monate vor Juni 2026 mit 4-Wochen-Berechnungszeiträumen)</label>
       <div class="abr" id="abrForm"></div>
