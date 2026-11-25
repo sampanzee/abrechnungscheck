@@ -1,6 +1,6 @@
 // Abrechnungscheck – Oberfläche, Speicher, Einrichtung, Netto, Tarif-Editor, Fotoerkennung
 "use strict";
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 const KEY = "abrcheck.app.v1";
 
 const DEF_SET = {
@@ -310,7 +310,7 @@ function render() {
   $("period").innerHTML = `Arbeitsmonat <b>${MONATE[viv.monat - 1]} ${viv.jahr}</b> → Abrechnung <b>${abrName(S.cur)}</b>`;
   $("summary").hidden = bz;
   $("summary").innerHTML = `
-    <div><span class="eyebrow">Stimmt</span><span class="v ok">${okN}</span></div>
+    <div><span class="eyebrow">Geprüft</span><span class="v ok">${okN}</span></div>
     <div><span class="eyebrow">Weicht ab</span><span class="v bad">${badN}</span></div>
     <div><span class="eyebrow">Ungeprüft</span><span class="v open">${openN}</span></div>
     <div><span class="eyebrow">Differenz</span><span class="v ${Math.abs(diff) > 0.02 ? "bad" : "ok"}">${diff > 0 ? "+" : ""}${de(diff)} €</span></div>`;
@@ -678,23 +678,63 @@ $("wzBody").addEventListener("click", e => {
 $("openWizard").addEventListener("click", openWizard);
 $("welcomeWizard").addEventListener("click", openWizard);
 
+// ---------- Neuigkeiten und Anleitung ----------
+const CHANGELOG = [
+  { v: "1.5.0", items: [
+    "Neue Versionen kommen jetzt zuverlässig an. Wenn eine bereitsteht, erscheint unten der Knopf „Jetzt aktualisieren“.",
+    "Oben gibt es den Knopf „Anleitung“: kurze Erklärung, wie die App funktioniert.",
+    "Nach jedem Update siehst du hier, was neu ist."] },
+  { v: "1.4.0", items: [
+    "NEF: Einsatzzuschlag je Einsatz wird geprüft. Die Anzahl der Einsätze trägst du unter „2 · Gehaltsmitteilung“ ein.",
+    "NEF nur zum Sammeln: in den Einstellungen „NEF regulär ab“ eintragen, Monate davor zählen ohne Einsatzzuschlag.",
+    "Bei NEF3 meldet die App, wenn die Bereitschaft kürzer als bis 20 Uhr gebucht ist."] },
+  { v: "1.3.0", items: [
+    "Knöpfe ganz oben: Vivendi-PDF laden, Abrechnung fotografieren (Kamera), Foto aus der Galerie.",
+    "Fotos und PDFs werden automatisch dem richtigen Monat zugeordnet.",
+    "Fehler behoben: Überstunden und Zeitguthaben wurden bei direkt geladenen PDFs falsch als Abweichung gezeigt."] },
+  { v: "1.2.0", items: [
+    "Fehler behoben: Freizeitausgleich nach BD wurde bei geladenen PDFs teils als fehlend gemeldet.",
+    "Ergebnisliste ist eingeklappt: Posten, Betrag, Status. Antippen zeigt die Rechnung."] },
+  { v: "1.1.0", items: [
+    "Fotoerkennung deutlich besser, liest mehrmals und prüft die Werte gegen Summen.",
+    "Erkannte Werte kannst du vor dem Übernehmen direkt korrigieren. Unsichere Werte sind rot markiert."] }
+];
+const vnum = v => v.split(".").map(Number).reduce((a, x) => a * 1000 + x, 0);
+function showNews(since) {
+  const list = CHANGELOG.filter(c => !since || vnum(c.v) > vnum(since));
+  if (!list.length) return;
+  $("newsBody").innerHTML = list.map(c => `<h3 class="eyebrow" style="margin:0">Version ${c.v}</h3><ul style="margin:0;padding-left:20px">${c.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>`).join("");
+  $("newsDlg").showModal();
+}
+$("closeNews").addEventListener("click", () => $("newsDlg").close());
+$("openHelp").addEventListener("click", () => $("helpDlg").showModal());
+$("closeHelp").addEventListener("click", () => $("helpDlg").close());
+$("ver").addEventListener("click", () => showNews(null));
+$("helpNews").addEventListener("click", () => { $("helpDlg").close(); showNews(null); });
+
 // ---------- Start ----------
-$("ver").textContent = "Version " + APP_VERSION;
+$("ver").textContent = "Version " + APP_VERSION + " · Neuigkeiten";
 buildSettings(); buildTarif(); buildAbr(); render();
 if (!S.set.setupDone && !Object.keys(S.months).length) setTimeout(openWizard, 300);
+else if (S.seenVersion !== APP_VERSION) { const since = S.seenVersion || "1.3.0"; setTimeout(() => showNews(since), 400); }
+S.seenVersion = APP_VERSION; save();
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  navigator.serviceWorker.register("sw.js").then(reg => {
+  const banner = w => {
+    if (document.getElementById("updBanner")) return;
+    const b = document.createElement("div"); b.id = "updBanner"; b.className = "msg good"; b.style.cssText = "position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;display:flex;gap:10px;align-items:center;justify-content:space-between";
+    b.innerHTML = `<span>Neue Version verfügbar.</span><button type="button">Jetzt aktualisieren</button>`;
+    b.querySelector("button").onclick = () => { w.postMessage("skipWaiting"); setTimeout(() => location.reload(), 1500); };
+    document.body.appendChild(b);
+  };
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+    // eine schon wartende neue Version sofort anbieten, dann im Hintergrund nach Updates sehen
+    if (reg.waiting && navigator.serviceWorker.controller) banner(reg.waiting);
     reg.addEventListener("updatefound", () => {
       const nw = reg.installing; if (!nw) return;
-      nw.addEventListener("statechange", () => {
-        if (nw.state === "installed" && navigator.serviceWorker.controller) {
-          const b = document.createElement("div"); b.className = "msg good"; b.style.cssText = "position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;display:flex;gap:10px;align-items:center;justify-content:space-between";
-          b.innerHTML = `<span>Neue Version verfügbar.</span><button type="button">Neu laden</button>`;
-          b.querySelector("button").onclick = () => { nw.postMessage("skipWaiting"); };
-          document.body.appendChild(b);
-        }
-      });
+      nw.addEventListener("statechange", () => { if (nw.state === "installed" && navigator.serviceWorker.controller) banner(nw); });
     });
+    reg.update().catch(() => {});
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
   }).catch(() => {});
   let reloaded = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => { if (!reloaded) { reloaded = true; location.reload(); } });

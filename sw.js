@@ -1,9 +1,10 @@
 // Offline-Cache: App-Dateien beim Installieren, Bibliotheken von CDNs beim ersten Abruf
-const VERSION = "abrcheck-1.4.0";
+const VERSION = "abrcheck-1.5.0";
 const SHELL = ["./", "index.html", "style.css", "lohnsteuer.js", "netto.js", "logic.js", "abrocr.js", "ocr.js", "app.js",
   "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
-self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL))); });
+// immer frisch vom Server holen, nicht aus dem Browser-Zwischenspeicher
+self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: "reload" }))))); });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== "abrcheck-runtime").map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });

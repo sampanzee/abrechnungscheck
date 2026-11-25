@@ -18,6 +18,7 @@
     <div class="topbar">
       <span class="eyebrow">Diakovere · TV DN</span>
       <div class="btns">
+        <button type="button" class="sec small" id="openHelp">Anleitung</button>
         <button type="button" class="sec small" id="openWizard">Einrichtung</button>
         <button type="button" class="sec small" id="openBackup">Sicherung</button>
       </div>
@@ -144,6 +145,49 @@
 </div>
 
 <dialog id="wizard" aria-labelledby="wzTitle"><div class="dlg" id="wzBody"></div></dialog>
+
+<dialog id="newsDlg" aria-labelledby="newsTitle">
+  <div class="dlg">
+    <h2 id="newsTitle">Neu in dieser Version</h2>
+    <div id="newsBody" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="nav"><span></span><button type="button" id="closeNews">Alles klar</button></div>
+  </div>
+</dialog>
+
+<dialog id="helpDlg" aria-labelledby="helpTitle">
+  <div class="dlg help-dlg">
+    <h2 id="helpTitle">So funktioniert der Abrechnungscheck</h2>
+    <p class="hint">Die App rechnet aus deiner Vivendi-Monatsauswertung nach, welche Zulagen dir zustehen, und vergleicht das mit deiner Gehaltsmitteilung. Alles bleibt auf deinem Handy.</p>
+    <details open><summary><b>1. Einmal einrichten</b></summary>
+      <p>Tippe oben auf <b>Einrichtung</b> und geh die Schritte durch: Entgeltgruppe, Stufe, Stunden, Kinder, Steuerklasse, Krankenkasse. Alles steht auf deiner Gehaltsmitteilung, die App sagt dir jeweils, wo.</p></details>
+    <details><summary><b>2. Jeden Monat: Vivendi-PDF laden</b></summary>
+      <p>In Vivendi die <b>Einzelabrechnung</b> des Monats als PDF speichern. Dann oben <b>Vivendi-PDF laden</b> tippen. Die App erkennt den Monat selbst.</p>
+      <p>Wichtig: Die Zulagen eines Monats stehen erst in der Gehaltsmitteilung <b>zwei Monate später</b> (Arbeit im August → Gehaltsmitteilung Oktober).</p></details>
+    <details><summary><b>3. Gehaltsmitteilung fotografieren</b></summary>
+      <p>Oben <b>Abrechnung fotografieren</b>. Tipps: Blatt flach hinlegen, von oben, gutes Licht, ganze Seite 1 im Bild. Die App liest mehrmals und ordnet die Abrechnung dem richtigen Monat zu.</p>
+      <p>Danach siehst du eine Liste: ✓ heißt bestätigt, ⚠ in Rot heißt bitte mit dem Papier vergleichen. Du kannst jeden Wert direkt ändern und dann <b>Werte übernehmen</b>.</p>
+      <p>Hast du die Abrechnung vor dem PDF fotografiert, merkt sich die App die Werte und ordnet sie zu, sobald das PDF da ist.</p></details>
+    <details><summary><b>4. Ergebnis lesen</b></summary>
+      <p><b>geprüft</b> (grün): nachgerechnet und stimmt. <b>weicht ab</b> (rot): Betrag passt nicht, die Differenz steht darunter. <b>ungeprüft</b> (grau): noch nicht prüfbar, z. B. weil ein Wert fehlt.</p>
+      <p>Tippe auf eine Zeile, um die Rechnung und Hinweise zu sehen. Ganz oben stehen erwartetes Brutto und geschätztes Netto, unter „Abzüge im Einzelnen“ die Steuer und Beiträge.</p></details>
+    <details><summary><b>5. Dienste und Freizeitausgleich</b></summary>
+      <p>Im Abschnitt <b>Dienste und Freizeitausgleich</b> siehst du jeden Bereitschaftsdienst mit Bewertung, Nachtstunden und Freizeitausgleich. Fehlt ein Freizeitausgleich, steht oben eine rote Meldung.</p>
+      <p>Wurde ein BD weniger als 72 Std vorher geplant oder geändert, setz dort den Haken „&lt;72 Std geändert“. Dann zählt er 10 Punkte mehr.</p></details>
+    <details><summary><b>6. Besondere Fälle</b></summary>
+      <p><b>Dienstplan zu spät:</b> Haken unter „2 · Gehaltsmitteilung“, wenn der Plan weniger als 6 Wochen vorher kam.</p>
+      <p><b>Nur Dienste zählen:</b> für alte Monate, die nicht geprüft werden sollen. Sie zählen trotzdem für die BD-Regeln und den Zusatzurlaub.</p>
+      <p><b>NEF:</b> Anzahl der Einsätze unter „2 · Gehaltsmitteilung“ eintragen. Fährst du nur zum Sammeln, den Haken setzen oder in den Einstellungen „NEF regulär ab“ eintragen.</p>
+      <p><b>Unbekannte Dienstkürzel:</b> Unter „Dienstkürzel“ kannst du jedem Kürzel eine Bedeutung und Regel geben.</p></details>
+    <details><summary><b>7. Zusatzurlaub und Arbeitszeitkonto</b></summary>
+      <p>Unter <b>Gespeicherte Monate</b> zählt die App deine BD im Halbjahr (ab 30 gibt es einen Tag) und deine Nachtstunden im Jahr (je 110 Std ein Tag, höchstens 4).</p></details>
+    <details><summary><b>8. Daten sichern</b></summary>
+      <p>Deine Daten liegen nur auf diesem Handy. Speichere ab und zu über <b>Sicherung</b> eine Datei, vor allem vor einem Handywechsel. Auf dem neuen Gerät die Datei wieder importieren.</p></details>
+    <details><summary><b>9. Neue Tarifwerte</b></summary>
+      <p>Nach Tarifverhandlungen trägst du die neuen Tabellen unter <b>Tarifwerte</b> ein: neuen Stichtag anlegen (Kopie), dann die Beträge ändern.</p></details>
+    <p class="hint">Die App ersetzt keine Beratung. Bei Abweichungen: Personalabteilung, Mitarbeitervertretung oder Marburger Bund fragen.</p>
+    <div class="nav"><button type="button" class="sec" id="helpNews">Neuigkeiten</button><button type="button" id="closeHelp">Schließen</button></div>
+  </div>
+</dialog>
 
 <dialog id="backupDlg" aria-labelledby="bkTitle">
   <div class="dlg">

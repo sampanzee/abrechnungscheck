@@ -166,3 +166,7 @@ details.row > summary .lbl { min-width: 0; overflow-wrap: anywhere; hyphens: aut
 .ocrlist { grid-template-columns: minmax(0, 1fr) 5.2em 6.4em; }
 .ocrlist input.num { width: 100%; min-width: 0; }
 .nefbox { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.help-dlg details { border-top: 1px solid var(--line); padding-top: 8px; }
+.help-dlg details p { margin: 6px 0 0; font-size: 0.9rem; line-height: 1.45; }
+.help-dlg summary { cursor: pointer; }
+#ver { cursor: pointer; text-decoration: underline; }
