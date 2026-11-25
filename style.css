@@ -165,3 +165,4 @@ details.row > summary .lbl { min-width: 0; overflow-wrap: anywhere; hyphens: aut
 .quick > #ocrResult[hidden] { display: none; }
 .ocrlist { grid-template-columns: minmax(0, 1fr) 5.2em 6.4em; }
 .ocrlist input.num { width: 100%; min-width: 0; }
+.nefbox { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }

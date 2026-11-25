@@ -20,6 +20,7 @@
     { key: "ftbd", re: /FZZ/i, col: "vor", sum: true },
     { key: "bdzz", re: /stufe\s*D\s*3|ZZ\s*Stu/i, col: "vor" },
     { key: "vtz", re: /vertret/i, col: "vor" },
+    { key: "nef", re: /einsatz|rettungsd/i, col: "vor" },
     { key: "krank", re: /kr[kc]\.?\s*-?\s*au|krank.*auf/i, col: "vor" },
     { key: "url", re: /ur[il1]\.?\s*-?\s*au|au\s*-?\s*s?chlag/i, col: "vor" },
     { key: "nnl", re: /SV-?\s*Pflicht\s*Z/i, col: "both" },
@@ -145,7 +146,7 @@
   function toAbr(left, right) {
     const r = left.res, abr = {};
     for (const k of ["grund", "kinder"]) if (r[k] && (r[k].lfd != null || r[k].b != null)) abr[k] = { b: fmt(r[k].lfd != null ? r[k].lfd : r[k].b) };
-    for (const k of ["sz", "zg", "uezz", "so", "ft", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank"]) if (r[k]) { abr[k] = { m: r[k].m != null ? fmt(r[k].m) : "", b: fmt(r[k].b != null ? r[k].b : r[k].lfd) }; if (r[k].ok) abr[k].ok = true; if (r[k].alt != null) abr[k].alt = fmt(r[k].alt); if (r[k].guessed) abr[k].guessed = true; }
+    for (const k of ["sz", "zg", "uezz", "so", "ft", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "nef", "url", "krank"]) if (r[k]) { abr[k] = { m: r[k].m != null ? fmt(r[k].m) : "", b: fmt(r[k].b != null ? r[k].b : r[k].lfd) }; if (r[k].ok) abr[k].ok = true; if (r[k].alt != null) abr[k].alt = fmt(r[k].alt); if (r[k].guessed) abr[k].guessed = true; }
     r.summe = r.summe || {};
     if (right.summeLfd != null) r.summe.lfd = right.summeLfd;
     if (right.summeVor != null) r.summe.b = right.summeVor;
@@ -159,7 +160,7 @@
     if (right.netVor != null) abr.netVor = { b: fmt(right.netVor) };
     // Summenabgleich Vormonate
     const sumVor = Object.entries(abr).filter(([k]) => !["grund", "kinder", "netLfd", "netVor", "nnlL", "nnlV", "summeLfd"].includes(k)).reduce((s, [, v]) => s + (parseFloat(String(v.b).replace(",", ".")) || 0), 0);
-    const VOR = ["sz", "zg", "uezz", "so", "ft", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank"];
+    const VOR = ["sz", "zg", "uezz", "so", "ft", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "nef", "url", "krank"];
     const val = k => abr[k] ? parseFloat(String(abr[k].b).replace(",", ".")) || 0 : 0;
     const sumOf = () => Math.round(VOR.reduce((s, k) => s + val(k), 0) * 100) / 100;
     const check = { sumVor: sumOf(), summeVor: r.summe.b != null ? r.summe.b : null, summeLfd: r.summe.lfd != null ? r.summe.lfd : null, ueberw: right.ueberw != null ? right.ueberw : null };

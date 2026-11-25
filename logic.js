@@ -247,6 +247,14 @@ function nachzaehlen(viv, set, codes, prevViv, nextViv, ctx) {
     const kc = knownCode(tag.ist);
     if (bd.bereit > 0 && kc && kc.soll && Math.abs(bd.bereit - kc.soll) > 0.05)
       res.msgs.push({ lvl: "info", t: `${tag.ist} am ${dm(tag.date)}: ${de(r2(bd.bereit))} Std Bereitschaft statt üblich ${de(kc.soll)} Std (z. B. Feiertagsfolge oder Dienstverschiebung).` });
+    // NEF3 (Anlage NEF zur DV Arbeitszeit): Mo–Fr 7:20–15:42 Arbeit, 15:42–20:00 BD Stufe III = 4,30 Std
+    if (/^NEF3/.test(tag.ist) && !ctx.nefSammeln) {
+      const wdN = new Date(tag.date).getUTCDay(), bs = tl.filter(s => s.typ === "bereit");
+      if (wdN >= 1 && wdN <= 5 && bd.bereit < NEF3_BD - 0.05) {
+        const end = bs.length ? Math.max(...bs.map(s => s.b)) : null, hm = m => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, "0")}:${String(((m % 60) + 60) % 60).padStart(2, "0")}`;
+        res.msgs.push({ lvl: "warn", t: `NEF3 am ${dm(tag.date)}: Bereitschaft ${end != null ? `nur bis ${hm(end)} Uhr gebucht (${de(r2(bd.bereit))} Std)` : "gar nicht gebucht"} statt bis 20:00 Uhr (${de(NEF3_BD)} Std). Laut Anlage NEF gehört die Zeit bis 20 Uhr zum BD, auch wenn kein Einsatz mehr kommt. Stimmt das nur, wenn du ausdrücklich früher entlassen wurdest.` });
+      }
+    }
     if (bd.bereit > 0) { res.bdRoh += bd.bereit; res.na1 += bd.na1; res.na2 += bd.na2; res.dienste.push({ date: tag.date, wd: tag.wd, ist: tag.ist, ...bd, overnight: tl.some(s => s.typ === "bereit" && s.b > 1440), abzug: 0, fza: "" }); }
   }
   // Bewertung je Dienst: Stufe + 10 Pkt. über 5 BD/Monat im Schnitt + 10 Pkt. verspäteter Dienstplan
@@ -324,6 +332,7 @@ const POSTEN = [
   { key: "bdzz", label: "Bereitschaftsdienstzuschlag", code: "JLL ZZ Stufe D3", kind: "calc", viv: ["BD"], own: "bdW", unit: "Std", rate: (t, g) => t.std[g].bdz, rateTxt: () => "15 % je gewertete Std" },
   { key: "ftbd", label: "Feiertag im BD", code: "JLL FZZ Stufe II/III", kind: "calc", vivRe: /^FT BD/, own: "ftbdW", unit: "Std", rate: (t, g) => r2(bdRate(t, g) * 0.25), rateTxt: () => "25 % je gewertete Std" },
   { key: "vtz", label: "Vertretungszuschlag", code: "JLL Vertretungsz.", kind: "vtz" },
+  { key: "nef", label: "Einsatzzuschlag Rettungsdienst", code: "Einsatzzuschlag NEF", kind: "nef", unit: "Einsätze" },
   { key: "uezz", label: "Überstunden-Zuschlag", code: "JLL Überstd-ZZ", kind: "calc", viv: ["ÜSZZ"], unit: "Std",
     rate: (t, g, s) => { const a = t.ue[g]; return a ? a[Math.min(s.stf, a.length) - 1] : null; }, rateTxt: (t, g, s) => `15 %, Tabelle 1b Stufe ${Math.min(s.stf, (t.ue[g] || []).length)}` },
   { key: "url", label: "Urlaubsaufschlag", code: "JLL Url.-Aufschlag", kind: "calc", viv: ["U"], own: "urlaub", unit: "Tage", rate: (t, g, s, v) => urlRateOf(v), rateTxt: (t, g, s, v) => urlRateTxt(v) },
@@ -342,6 +351,9 @@ function zgRate(t, g, s, v) {
 // Vertretungs-Kürzel im Dienstplan. Ziffer = Fallgruppe, Buchstabe a = nur Mo–Fr 6–22 Uhr, b = Wochenende/Feiertag/Nacht.
 // Bestätigt: 1b (Diensttausch WE/FT/Nacht), 2b (aus Frei, 120 €), 3a (50 €). Der Rest ist aus § 17 Abs. 1 abgeleitet.
 // Beträge bestätigt durch DV Ausfallmanagement vom 06.03.2026, § 4 Abs. 5 (ohne Dokumentation der Anfrage gilt die kürzeste Frist)
+const NEF3_BD = 4.3;
+// Einsatzzuschlag Rettungsdienst je Einsatz (TV DN Teil C V § 2 Abs. 2), steuer- und SV-pflichtig, nicht zusatzversorgungsfähig
+let NEF = [{ ab: "2026-01-01", v: 24.14 }, { ab: "2026-07-01", v: 24.62 }, { ab: "2027-01-01", v: 24.87 }, { ab: "2027-07-01", v: 25.59 }];
 let VZ_MAP = { "1a": 50, "1b": 60, "2a": 100, "2b": 120, "3a": 50, "3b": 60, "RB": 30 };
 function vzAusserhalb(t) {
   if (isFeiertag(t.date)) return true;
@@ -354,7 +366,8 @@ const isVtz = n => /^VTZ\s*\d+/.test(n);
 const KNOWN_LA = new Set(POSTEN.flatMap(p => p.viv || []));
 const knownLa = n => KNOWN_LA.has(n) || isVtz(n) || /^FT BD/.test(n);
 
-function pruefen(viv, own, set, abr) {
+function pruefen(viv, own, set, abr, meta) {
+  meta = meta || {};
   const rows = [];
   if (!viv || !viv.jahr) return rows;
   const tA = tarifFor(viv.jahr, viv.monat);
@@ -387,6 +400,25 @@ function pruefen(viv, own, set, abr) {
       if (!s || set.schicht === "0") { row.notes.push(set.schicht === "0" ? "Laut Einstellungen keine Schichtzulage." : "Kein Betrag für diesen Monat hinterlegt."); row.status = aB ? "bad" : "open"; rows.push(row); continue; }
       const voll = s[set.schicht]; const exp = r2(Math.max(50, voll * tz));
       fixRow(row, exp, `${eur(voll)}${tz < 1 ? ` × ${de(set.woStd)}/${de(VOLLZEIT, 1)}` : ""}, mindestens 50 €`);
+      rows.push(row); continue;
+    }
+    if (p.kind === "nef") {
+      const tage = viv.tage.filter(t => /^NEF/.test(t.ist || "")), n = meta.nefEinsaetze === "" || meta.nefEinsaetze == null ? null : num(String(meta.nefEinsaetze));
+      if (!tage.length && aB == null && !n) continue;
+      if (tage.length) row.notes.push(`NEF-Dienste laut Vivendi: ${tage.map(t => `${t.ist} am ${wdOf(t.date)} ${dm(t.date)}`).join(", ")}`);
+      if (meta.nefSammeln) {
+        row.exp = 0; row.formula = "NEF-Fahrten zum Sammeln: BD-Stunden ja, Einsatzzuschlag nein";
+        row.status = aB == null || Math.abs(aB) < 0.005 ? "ok" : "bad";
+        if (aB) row.notes.push({ bad: true, t: "Im Monat ist „NEF nur zum Sammeln“ angehakt, die Abrechnung zahlt aber einen Einsatzzuschlag." });
+        rows.push(row); continue;
+      }
+      const z = byDate(NEF, viv.jahr, viv.monat);
+      if (n == null) { row.notes.push("Trag unter „2 · Gehaltsmitteilung“ die Zahl deiner NEF-Einsätze in diesem Monat ein (aus dem Einsatzformular), dann wird der Zuschlag geprüft."); if (z) row.notes.push(`Satz: ${eur(z.v)} je Einsatz.`); rows.push(row); continue; }
+      row.q = n;
+      if (!z) { row.notes.push("Kein Satz für diesen Monat hinterlegt (Tarifwerte → Einsatzzuschlag)."); rows.push(row); continue; }
+      fixRow(row, r2(n * z.v), `${de(n, 0)} ${n === 1 ? "Einsatz" : "Einsätze"} × ${eur(z.v)} (TV DN Teil C V § 2)`);
+      if (aM != null && Math.abs(aM - n) > 0.005) { row.status = "bad"; row.notes.push({ bad: true, t: `Abrechnung führt ${de(aM, 0)} Einsätze, eingetragen sind ${de(n, 0)}.` }); }
+      row.notes.push("Entfällt nur, wenn du für den Rettungsdienst anderweitig Geld bekommst (z. B. Liquidation, Zahlung des Rettungsdienstträgers).");
       rows.push(row); continue;
     }
     if (p.kind === "vtz") {
@@ -449,11 +481,12 @@ function pruefen(viv, own, set, abr) {
 }
 
 // Standardwerte sichern und Tarif tauschen (Tarif-Editor)
-const DEFAULT_TARIF = JSON.parse(JSON.stringify({ tarif: TARIF, schicht: SCHICHT, kinder: KINDER, bdStufe: BD_STUFE, vz: VZ_MAP }));
+const DEFAULT_TARIF = JSON.parse(JSON.stringify({ tarif: TARIF, schicht: SCHICHT, kinder: KINDER, bdStufe: BD_STUFE, vz: VZ_MAP, nef: NEF }));
 function setTarif(d) {
   d = d || DEFAULT_TARIF;
   TARIF = JSON.parse(JSON.stringify(d.tarif)).sort((a, b) => a.ab < b.ab ? -1 : 1);
   SCHICHT = JSON.parse(JSON.stringify(d.schicht)).sort((a, b) => a.ab < b.ab ? -1 : 1);
   KINDER = JSON.parse(JSON.stringify(d.kinder)).sort((a, b) => a.ab < b.ab ? -1 : 1);
   BD_STUFE = Object.assign({}, d.bdStufe); VZ_MAP = Object.assign({}, d.vz);
+  NEF = JSON.parse(JSON.stringify(d.nef || DEFAULT_TARIF.nef)).sort((a, b) => a.ab < b.ab ? -1 : 1);
 }

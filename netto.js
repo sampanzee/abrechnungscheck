@@ -32,7 +32,7 @@
     const auszL = c(bruttoL - tL.lst - tL.soli - tL.kist - svL.summe - zvL - (p.entgeltumwandlung || 0) - (p.vwlSparrate || 0) + (p.agZuschussFrei || 0) + pkvNetto);
     // Vormonate: aufgerollt im Arbeitsmonat
     const stpflArb = c(a.entgeltArbeitsmonat + a.kinderArbeitsmonat + a.vlArbeitsmonat - (p.entgeltumwandlung || 0) - zvAN(a.entgeltArbeitsmonat));
-    const zvV = zvAN(a.zulagenStpfl + a.zeitguthaben);
+    const zvV = zvAN(a.zulagenStpfl - (a.zulagenNichtZV || 0) + a.zeitguthaben);
     const nz = c(a.zulagenStpfl - zvV);
     const o = lstOpts(p, a.arbeitsJahr);
     const t0 = L.monat(o, stpflArb, 0), t1 = L.monat(o, stpflArb + nz, 0);

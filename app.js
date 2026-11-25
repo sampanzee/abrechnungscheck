@@ -1,6 +1,6 @@
 // Abrechnungscheck – Oberfläche, Speicher, Einrichtung, Netto, Tarif-Editor, Fotoerkennung
 "use strict";
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 const KEY = "abrcheck.app.v1";
 
 const DEF_SET = {
@@ -44,11 +44,13 @@ function evalMonthRaw(key) {
   const win = [neighbour(key, -2), neighbour(key, -1)];
   const miss = win.filter(k => !S.months[k]);
   const c0 = win.reduce((x, k) => x + (S.months[k] && vivOf(k) ? bdTage(vivOf(k)) : 0), 0);
-  const ctx = { rates, c0, known: !miss.length, missing: miss.map(monthName).join(", "), planSpaet: !!S.months[key].planSpaet, kurz: S.months[key].kurz || {} };
+  const ctx = { rates, c0, known: !miss.length, missing: miss.map(monthName).join(", "), planSpaet: !!S.months[key].planSpaet, kurz: S.months[key].kurz || {}, nefSammeln: nefSammelnOf(key) };
   const own = nachzaehlen(viv, setForLogic(), S.codes, vivOf(neighbour(key, -1)), vivOf(neighbour(key, 1)), ctx);
-  const rows = S.months[key].bz ? [] : pruefen(viv, own, setForLogic(), S.months[key].abr || {});
+  const rows = S.months[key].bz ? [] : pruefen(viv, own, setForLogic(), S.months[key].abr || {}, { nefSammeln: nefSammelnOf(key), nefEinsaetze: S.months[key].nefEinsaetze });
   return { viv, own, rows };
 }
+// NEF nur zum Sammeln: im Monat angehakt, sonst alle Monate vor „NEF regulär ab“ aus den Einstellungen
+const nefSammelnOf = k => { const m = S.months[k] || {}; if (m.nefSammeln != null) return !!m.nefSammeln; return !!(S.set.nefAb && k < S.set.nefAb); };
 const setForLogic = () => Object.assign({}, S.set, { stf: +S.set.stf, kinder: +S.set.kinder || 0 });
 
 const $ = id => document.getElementById(id);
@@ -95,11 +97,11 @@ function netFor(key, ev) {
   const tA = tarifFor(A.y, A.m), tW = tarifFor(y, m);
   if (!tA || !tW || !tA.monat[g] || !tW.monat[g]) return null;
   const kiA = byDate(KINDER, A.y, A.m), kiW = byDate(KINDER, y, m), n = +S.set.kinder || 0;
-  let frei = 0, stpfl = 0, zg = 0;
+  let frei = 0, stpfl = 0, zg = 0, nichtZV = 0;
   ev.rows.forEach(r => {
     if (["grund", "kinder"].includes(r.p.key)) return;
     const v = r.aB != null ? r.aB : r.exp; if (v == null) return;
-    if (r.p.key === "zg") zg += v; else if (TAXFREE.has(r.p.key)) frei += v; else stpfl += v;
+    if (r.p.key === "zg") zg += v; else if (TAXFREE.has(r.p.key)) frei += v; else { stpfl += v; if (r.p.key === "nef") nichtZV += v; }
   });
   const abr = S.months[key].abr || {};
   let nnlL = num((abr.nnlL || {}).b), nnlV = num((abr.nnlV || {}).b), nnlFrom = null;
@@ -114,7 +116,7 @@ function netFor(key, ev) {
   const res = Netto.abrechnung(nettoParams(), {
     jahr: A.y, entgelt: r2(tA.monat[g][st - 1] * tz), kinder: r2((kiA ? kiA.v : 0) * n * tz), vl: +S.set.vl || 0,
     arbeitsJahr: y, entgeltArbeitsmonat: r2(tW.monat[g][st - 1] * tz), kinderArbeitsmonat: r2((kiW ? kiW.v : 0) * n * tz), vlArbeitsmonat: +S.set.vl || 0,
-    zulagenStpfl: r2(stpfl), zulagenFrei: r2(frei), zeitguthaben: r2(zg), nnlL: nnlL || 0, nnlV: nnlV || 0
+    zulagenStpfl: r2(stpfl), zulagenNichtZV: r2(nichtZV), zulagenFrei: r2(frei), zeitguthaben: r2(zg), nnlL: nnlL || 0, nnlV: nnlV || 0
   });
   res.nnlFrom = nnlFrom; res.paramsJahr = Math.max(A.y, y) > 2026;
   return res;
@@ -143,11 +145,12 @@ const SET_FIELDS = {
   zvSatz: { l: "Eigenbeitrag Zusatzversorgung (ZVK) %", t: "num", help: "Meist 1,3 %. Rechnung: „AN-Beitrag ZV“ (Seite 1, Spalte „lfd. Monat“) ÷ „ZV-Brutto“ (Seite 2 unter „Summen“, Spalte „Monat“) × 100." },
   entgeltumwandlung: { l: "Entgeltumwandlung €/Monat", t: "num", help: "z. B. „UnterstützKasse“ auf der rechten Seite." },
   vwlSparrate: { l: "VL-Sparrate €/Monat", t: "num", help: "„Vw-Leistung“ auf der rechten Seite." },
+  nefAb: { l: "NEF regulär mit Einsatzzuschlag ab Arbeitsmonat", t: "month", help: "Leer lassen, wenn du kein NEF fährst. Monate davor gelten als „nur Fahrten sammeln“: BD-Stunden zählen, aber kein Einsatzzuschlag. In jedem Monat einzeln änderbar." },
   agZuschussFrei: { l: "Steuerfreier Arbeitgeberzuschuss €/Monat", t: "num", help: "z. B. „NNN Zuschuss Betr.“ in der Spalte „lfd. Monat“." }
 };
 const SET_GROUPS = [
   { t: "Tarif", keys: ["grp", "stf", "woStd", "tagStd"] },
-  { t: "Zulagen", keys: ["kinder", "schicht", "vl"] },
+  { t: "Zulagen", keys: ["kinder", "schicht", "vl", "nefAb"] },
   { t: "Steuer", keys: ["stkl", "zkf", "kist"] },
   { t: "Kranken- und Pflegeversicherung", keys: ["kvArt", "kvz", "pvKinder", "pvKinderlos", "pkvBeitrag", "pkvZuschuss"] },
   { t: "Altersvorsorge und Abzüge", keys: ["versorgungswerk", "bveSatz", "zvSatz", "entgeltumwandlung", "vwlSparrate", "agZuschussFrei"] }
@@ -155,12 +158,14 @@ const SET_GROUPS = [
 function fieldHtml(k, prefix) {
   const f = SET_FIELDS[k], id = prefix + k, v = S.set[k];
   if (f.t === "select") return `<label class="f" for="${id}">${f.l}<select id="${id}" data-k="${k}">${f.opts().map(([val, txt]) => `<option value="${esc(val)}" ${String(v) === String(val) ? "selected" : ""}>${esc(txt)}</option>`).join("")}</select></label>`;
+  if (f.t === "month") return `<label class="f" for="${id}">${f.l}<input type="month" id="${id}" data-k="${k}" value="${esc(v || "")}"></label>`;
   if (f.t === "check") return `<label class="check" for="${id}"><input type="checkbox" id="${id}" data-k="${k}" ${v ? "checked" : ""}> ${f.l}</label>`;
   return `<label class="f" for="${id}">${f.l}<input id="${id}" data-k="${k}" class="num" inputmode="${f.t === "int" ? "numeric" : "decimal"}" value="${esc(f.t === "int" ? (v ?? "") : de(+v || 0))}"></label>`;
 }
 function readField(el) {
   const k = el.dataset.k, f = SET_FIELDS[k]; if (!f) return;
-  if (f.t === "check") S.set[k] = el.checked;
+  if (f.t === "month") S.set[k] = el.value || "";
+  else if (f.t === "check") S.set[k] = el.checked;
   else if (f.t === "num") S.set[k] = num(el.value) ?? 0;
   else if (f.t === "int") S.set[k] = Math.max(0, Math.round(num(el.value) ?? 0));
   else S.set[k] = el.value;
@@ -205,6 +210,9 @@ function buildAbr() {
   $("abrForm").innerHTML = h;
   $("planSpaet").checked = !!S.months[S.cur].planSpaet;
   $("bzMonth").checked = !!S.months[S.cur].bz;
+  $("nefSammeln").checked = nefSammelnOf(S.cur);
+  $("nefEinsaetze").value = S.months[S.cur].nefEinsaetze ?? "";
+  $("nefBox").hidden = !(vivOf(S.cur) || { tage: [] }).tage.some(t => /^NEF/.test(t.ist || "")) && !S.months[S.cur].nefEinsaetze && S.months[S.cur].nefSammeln == null;
   for (const k of ["netLfd", "netVor", "nnlL", "nnlV"]) $(k).value = (abr[k] || {}).b || "";
 }
 function readAbr() {
@@ -431,7 +439,7 @@ $("useText").addEventListener("click", () => loadViv($("vivText").value));
 // ---------- Gehaltsmitteilung per Foto ----------
 const OCR_LABEL = Object.assign(Object.fromEntries(POSTEN.map(p => [p.key, p.label])), { netLfd: "Auszahlung lfd. Monat", netVor: "Auszahlung Vormonate", nnlL: "SV-pflichtige ZV-Umlage lfd.", nnlV: "SV-pflichtige ZV-Umlage Vormonate", summeLfd: "Summe lfd. Monat" });
 let ocrPending = null;
-const OCR_ORDER = ["grund", "kinder", "sz", "zg", "uezz", "so", "ft", "nacht", "x2412", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "url", "krank", "nnlL", "nnlV", "netLfd", "netVor"];
+const OCR_ORDER = ["grund", "kinder", "sz", "zg", "uezz", "so", "ft", "nacht", "x2412", "na1", "na2", "bd", "bdzz", "ftbd", "vtz", "nef", "url", "krank", "nnlL", "nnlV", "netLfd", "netVor"];
 let ocrTarget = null;
 $("photoBtn").addEventListener("click", () => $("photo").click());
 $("camBtn").addEventListener("click", () => $("photoCam").click());
@@ -502,6 +510,8 @@ $("abrForm").addEventListener("input", () => { readAbr(); render(); });
 ["netLfd", "netVor", "nnlL", "nnlV"].forEach(id => $(id).addEventListener("input", () => { readAbr(); render(); }));
 $("planSpaet").addEventListener("change", e => { S.months[S.cur].planSpaet = e.target.checked; save(); render(); });
 $("bzMonth").addEventListener("change", e => { S.months[S.cur].bz = e.target.checked; save(); render(); });
+$("nefSammeln").addEventListener("change", e => { S.months[S.cur].nefSammeln = e.target.checked; save(); render(); });
+$("nefEinsaetze").addEventListener("input", e => { const v = e.target.value.trim(); if (v === "") delete S.months[S.cur].nefEinsaetze; else S.months[S.cur].nefEinsaetze = Math.max(0, Math.round(num(v) ?? 0)); save(); render(); });
 
 // ---------- Sicherung ----------
 function backupJson() { return JSON.stringify({ app: "abrechnungscheck", version: 3, exportiert: new Date().toISOString(), set: S.set, codes: S.codes, months: S.months, urlBase: S.urlBase, tarif: S.tarif, pendingAbr: S.pendingAbr || {} }); }
@@ -577,7 +587,9 @@ function buildTarif() {
       ${d.schicht.map((s, i) => `<tr><td><input type="date" data-tl="schicht.${i}.ab" value="${s.ab}"></td><td><input class="num" data-tl="schicht.${i}.18" value="${esc(de(s["18"]))}"></td><td><input class="num" data-tl="schicht.${i}.13" value="${esc(de(s["13"]))}"></td></tr>`).join("")}</tbody></table></div>
     <div class="tbl"><table class="edit"><thead><tr><th>Gültig ab</th><th>Kinderzulage je Kind</th></tr></thead><tbody>
       ${d.kinder.map((s, i) => `<tr><td><input type="date" data-tl="kinder.${i}.ab" value="${s.ab}"></td><td><input class="num" data-tl="kinder.${i}.v" value="${esc(de(s.v))}"></td></tr>`).join("")}</tbody></table></div>
-    <div class="btns"><button type="button" class="sec small" data-addrow="schicht">Zeile Schichtzulage</button><button type="button" class="sec small" data-addrow="kinder">Zeile Kinderzulage</button></div>
+    <div class="tbl"><table class="edit"><thead><tr><th>Gültig ab</th><th>Einsatzzuschlag Rettungsdienst je Einsatz</th></tr></thead><tbody>
+      ${(d.nef || DEFAULT_TARIF.nef).map((x, i) => `<tr><td><input type="date" data-tl="nef.${i}.ab" value="${x.ab}"></td><td><input class="num" data-tl="nef.${i}.v" value="${esc(de(x.v))}"></td></tr>`).join("")}</tbody></table></div>
+    <div class="btns"><button type="button" class="sec small" data-addrow="schicht">Zeile Schichtzulage</button><button type="button" class="sec small" data-addrow="kinder">Zeile Kinderzulage</button><button type="button" class="sec small" data-addrow="nef">Zeile Einsatzzuschlag</button></div>
     <h3 class="eyebrow" style="margin:0">Vertretungszuschlag (€) und BD-Bewertung (%)</h3>
     <div class="inline">${Object.entries(d.vz).map(([k, v]) => `<label class="f">VZ ${esc(k)}<input class="num" data-tl="vz.${k}" value="${esc(de(v))}"></label>`).join("")}</div>
     <div class="inline">${Object.entries(d.bdStufe).map(([k, v]) => `<label class="f">BD Stufe ${esc(k)}<input class="num" data-tl="bdStufe.${k}" value="${esc(de(v, 0))}"></label>`).join("")}</div>
@@ -609,7 +621,7 @@ $("tarifBody").addEventListener("change", e => {
   if (el.dataset.tl) {
     const [a, b, c] = el.dataset.tl.split(".");
     if (a === "vz" || a === "bdStufe") d[a][b] = num(el.value) ?? 0;
-    else d[a][+b][c] = c === "ab" ? el.value : num(el.value);
+    else { if (!d[a]) d[a] = JSON.parse(JSON.stringify(DEFAULT_TARIF[a])); d[a][+b][c] = c === "ab" ? el.value : num(el.value); }
     saveTarif(d); return;
   }
   if (el.dataset.ls) { const [y, k] = el.dataset.ls.split("."); Lohnsteuer.PARAM[y][k] = num(el.value) ?? 0; S.steuer = { ls: Lohnsteuer.PARAM, sv: Netto.SV }; save(); render(); return; }
@@ -626,7 +638,7 @@ $("tarifBody").addEventListener("click", e => {
   }
   if (id === "tarifDel") { const d = curTarifData(); if (d.tarif.length < 2) return; d.tarif.sort((a, b) => a.ab < b.ab ? -1 : 1); d.tarif.splice(tarifIdx, 1); tarifIdx = Math.max(0, tarifIdx - 1); saveTarif(d); }
   if (id === "tarifReset") { S.tarif = null; setTarif(null); tarifIdx = null; save(); buildTarif(); render(); }
-  if (e.target.dataset.addrow) { const d = curTarifData(), k = e.target.dataset.addrow; const last = d[k][d[k].length - 1]; d[k].push(Object.assign({}, last, { ab: "" })); saveTarif(d); }
+  if (e.target.dataset.addrow) { const d = curTarifData(), k = e.target.dataset.addrow; if (!d[k]) d[k] = JSON.parse(JSON.stringify(DEFAULT_TARIF[k])); const last = d[k][d[k].length - 1]; d[k].push(Object.assign({}, last, { ab: "" })); saveTarif(d); }
   if (id === "ptAdd") {
     const y = String(Math.round(num($("ptYear").value) || 0)); if (!/^\d{4}$/.test(y) || Lohnsteuer.PARAM[y]) return;
     const ly = Object.keys(Lohnsteuer.PARAM).sort().pop(), sy = Object.keys(Netto.SV).sort().pop();
@@ -640,7 +652,7 @@ if (S.steuer) { Object.assign(Lohnsteuer.PARAM, S.steuer.ls || {}); Object.assig
 const WZ = [
   { t: "Willkommen", html: () => `<p>In ein paar Schritten richtest du den Abrechnungscheck für dich ein. Du brauchst dazu eine aktuelle <b>Gehaltsmitteilung</b>, dort stehen fast alle Angaben.</p><div class="help">Alles bleibt auf diesem Gerät. Wenn du etwas nicht weißt, lass den Vorschlag stehen. Du kannst alles später unter „Einstellungen“ ändern.</div>` },
   { t: "Tarif und Arbeitszeit", keys: ["grp", "stf", "woStd"], help: "Auf der Gehaltsmitteilung links unter „1. Tarif“: „Tar-Grp“ ist die Entgeltgruppe, „Stf“ die Stufe und „TZ-Zähl“ deine Wochenstunden." },
-  { t: "Zulagen", keys: ["kinder", "schicht", "vl"], help: "Links in der Spalte „lfd. Monat“: „JLL Kinderzulage“, „JLL VL Zulage“. Die Schichtzulage steht unter „Vormonate“." },
+  { t: "Zulagen", keys: ["kinder", "schicht", "vl", "nefAb"], help: "Links in der Spalte „lfd. Monat“: „JLL Kinderzulage“, „JLL VL Zulage“. Die Schichtzulage steht unter „Vormonate“." },
   { t: "Steuer", keys: ["stkl", "zkf", "kist"], help: "In der Kopfzeile der Gehaltsmitteilung: „St Kl“ (Steuerklasse), „Konf“ (Konfession, leer = keine Kirchensteuer) und „Kinder-Freib.“." },
   { t: "Krankenversicherung", keys: ["kvArt", "kvz", "pvKinder", "pvKinderlos"], help: "Den Zusatzbeitrag nennt deine Krankenkasse auf ihrer Website (AOK Niedersachsen 2026: 2,98 %). Für die Pflegeversicherung zählen Kinder unter 25 Jahren." },
   { t: "Altersvorsorge und Abzüge", keys: ["versorgungswerk", "bveSatz", "zvSatz", "entgeltumwandlung", "vwlSparrate", "agZuschussFrei"], help: "Rechts auf der Gehaltsmitteilung: „Gesamtbeitrag BVE“ (Versorgungswerk), „AN-Beitrag ZV“, „UnterstützKasse“ (Entgeltumwandlung), „Vw-Leistung“ (VL-Sparrate). Links „NNN Zuschuss Betr.“ (steuerfreier Zuschuss)." },

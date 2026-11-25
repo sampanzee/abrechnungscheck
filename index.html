@@ -91,6 +91,10 @@
       <p class="hint">Am einfachsten oben über „Abrechnung fotografieren“. Oder von Hand eintragen: Posten aus der Spalte „Vormonate“ (Stunden bzw. Tage und Betrag), Entgelt und Kinderzulage aus „lfd. Monat“. Leere Felder werden nicht geprüft. Die beiden Zeilen „ZZ während BD“ gehören zu Na&nbsp;1 und Na&nbsp;2. „JNN Oster/Pfingst“ und „JNN 1. Mai/Weihn“ zählen zum Feiertag, alle „FZZ Stufe“-Zeilen zusammen zu „Feiertag im BD“.</p>
       <label class="check" for="planSpaet"><input type="checkbox" id="planSpaet"> Dienstplan für diesen Monat zu spät veröffentlicht (weniger als 6 Wochen vorher)</label>
       <label class="check" for="bzMonth"><input type="checkbox" id="bzMonth"> Nur Dienste zählen, Abrechnung nicht prüfen (z.&nbsp;B. Monate vor Juni 2026 mit 4-Wochen-Berechnungszeiträumen)</label>
+      <div class="nefbox" id="nefBox" hidden>
+        <label class="check" for="nefSammeln"><input type="checkbox" id="nefSammeln"> NEF-Dienste in diesem Monat nur zum Sammeln von Fahrten (kein Einsatzzuschlag, BD-Stunden zählen trotzdem)</label>
+        <label class="f" for="nefEinsaetze">Anzahl NEF-Einsätze in diesem Monat<input id="nefEinsaetze" class="num" inputmode="numeric" placeholder="aus dem Einsatzformular"></label>
+      </div>
       <div class="abr" id="abrForm"></div>
       <div class="abr">
         <span class="n">SV-pflichtige ZV-Umlage lfd. Monat<small>Seite 1 links, Zeile „NNL SV-PflichtZV“, Spalte „lfd. Monat“. Fehlt in vielen Monaten, dann leer lassen.</small></span><span></span>
